@@ -1,0 +1,23 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+LLM_MODEL = "llama-3.3-70b-versatile"
+LLM_TEMPERATURE = 0.3
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+FAISS_K = 15
+BM25_K = 15
+MIN_DOCS_REQUIRED = 3
+
+SECTION_73_YEARS = 3
+SECTION_74_YEARS = 5
+
+CONFIDENCE_APPROVE = 0.90
+CONFIDENCE_REVIEW = 0.70
+CONFIDENCE_ABSTAIN = 0.70
+
+MAX_RETRIES = 3
