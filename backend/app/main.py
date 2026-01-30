@@ -19,7 +19,5 @@ def health():
 def timebar(
     fy: str = "2018-19", section: int = 73, notice_date: date = date(2024, 1, 15)
 ):
-    """Check if a GST notice is time-barred"""
-
     request = TimeBarRequest(fy=fy, section=section, notice_date=notice_date)
     return calculate_timebar(request)
