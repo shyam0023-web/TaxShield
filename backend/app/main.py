@@ -20,6 +20,20 @@ def home():
 def health():
     return {"status": "healthy"}
 
+@app.get("/api/info")
+def project_info():
+    return {
+        "project": "TaxShield",
+        "version": "0.1.0",
+        "description": "AI-powered GST notice response system",
+        "features": [
+            "Time-bar detection",
+            "Hybrid RAG search",
+            "Multi-agent workflow"
+        ],
+        "status": "development"
+    }
+
 @app.get("/api/timebar", response_model=TimeBarResult)
 def timebar(
     fy: str = "2018-19", 
