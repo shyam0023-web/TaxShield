@@ -1,10 +1,31 @@
 """Groq API Client - Primary LLM (Llama 3.3 70B)"""
-from app.config import GROQ_API_KEY
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage
+from app.config import GROQ_API_KEY, LLM_MODEL, LLM_TEMPERATURE
+
 def get_llm():
-    # TODO: Initialize Groq client
-    # from langchain_groq import ChatGroq
-    # return ChatGroq(model="llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
-    pass
+    """Initialize and return Groq LLM client"""
+    if not GROQ_API_KEY:
+        raise ValueError("GROQ_API_KEY not set in .env file")
+    
+    return ChatGroq(
+        model=LLM_MODEL,
+        api_key=GROQ_API_KEY,
+        temperature=LLM_TEMPERATURE
+    )
+
 def generate(prompt: str) -> str:
-    # TODO: Call LLM and return response
-    pass
+    """Generate response from LLM"""
+    llm = get_llm()
+    response = llm.invoke([HumanMessage(content=prompt)])
+    return response.content
+
+# Singleton instance for reuse
+llm = None
+
+def get_shared_llm():
+    """Get or create shared LLM instance"""
+    global llm
+    if llm is None:
+        llm = get_llm()
+    return llm
