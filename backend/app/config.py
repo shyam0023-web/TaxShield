@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Project Info
 APP_NAME = "TaxShield"
 APP_VERSION = "0.1.0"
 APP_DESCRIPTION = "AI-powered GST notice response system"

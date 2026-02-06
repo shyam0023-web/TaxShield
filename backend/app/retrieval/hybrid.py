@@ -7,10 +7,8 @@ from sentence_transformers import SentenceTransformer
 from app.retrieval.ingestion import load_circulars, LegalDocument
 from app.config import EMBEDDING_MODEL, FAISS_K, BM25_K
 
-
 def simple_tokenize(text: str) -> List[str]:
     return re.findall(r"\w+", text.lower())
-
 
 class HybridSearcher:
     def __init__(self):
@@ -87,7 +85,6 @@ class HybridSearcher:
             })
             
         return results
-
 
 searcher = HybridSearcher()
 

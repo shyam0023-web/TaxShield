@@ -1,31 +1,23 @@
-"""Audit Module - Verifies the draft reply"""
 from app.agents.state import AgentState
 
 def audit(state: AgentState) -> dict:
-    """Check if the draft reply cites real documents we found"""
-    
     draft = state.get("draft_reply", "")
     found_docs = state.get("relevant_docs", [])
     found_ids = [doc['doc_id'] for doc in found_docs]
     
-    # 1. Check for citations
     citation_count = 0
     for doc_id in found_ids:
         if doc_id in draft:
             citation_count += 1
             
-    # 2. Calculate Score
-    # If we found docs but didn't cite them, low score.
     if len(found_docs) > 0:
         score = citation_count / len(found_docs)
     else:
         score = 1.0 if "ABSTAIN" in draft else 0.0
         
-    # Cap score at 1.0
     score = min(score, 1.0)
     
-    # 3. Pass/Fail Decision
-    passed = score >= 0.5  # Arbitrary threshold
+    passed = score >= 0.5
     
     return {
         "confidence_score": score,

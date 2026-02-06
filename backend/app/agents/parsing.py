@@ -1,9 +1,7 @@
-"""Parsing Module - Extracts text from PDF notices"""
 from pypdf import PdfReader
 import io
 
 def parse_notice(file_content: bytes) -> str:
-    """Extract text from PDF file content"""
     try:
         reader = PdfReader(io.BytesIO(file_content))
         text = ""
@@ -13,4 +11,3 @@ def parse_notice(file_content: bytes) -> str:
     except Exception as e:
         print(f"Error parsing PDF: {e}")
         return ""
-

@@ -1,4 +1,3 @@
-"""Drafting Module - Generates legal reply using LLM"""
 from app.llm.groq_client import generate
 from app.agents.state import AgentState
 
@@ -17,9 +16,6 @@ Your reply should:
 Draft Reply:"""
 
 def draft_reply(state: AgentState) -> dict:
-    """Generate legal reply using LLM with retrieved context"""
-    
-    # Format context from retrieved docs
     context = "\n\n".join([
         f"[{doc['doc_id']}]: {doc['text']}"
         for doc in state.get('relevant_docs', [])
@@ -32,7 +28,6 @@ def draft_reply(state: AgentState) -> dict:
             "messages": ["No documents found, abstaining from draft"]
         }
     
-    # Build prompt
     prompt = DRAFT_PROMPT.format(
         context=context,
         fy=state['fy'],
@@ -40,7 +35,6 @@ def draft_reply(state: AgentState) -> dict:
         notice_text=state['notice_text']
     )
     
-    # Generate reply
     reply = generate(prompt)
     
     return {
