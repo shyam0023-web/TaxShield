@@ -2,13 +2,14 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from datetime import date
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from app.watchdog.timebar import calculate_timebar, TimeBarRequest, TimeBarResult
 from app.retrieval.hybrid import searcher
 from app.agents.parsing import parse_notice
 from app.agents.graph import app as agent_app
 from app.models.schemas import NoticeRequest
+from app.llm.groq_client import generate
 
 app = FastAPI(title="TaxShield API")
 
@@ -138,9 +139,57 @@ async def upload_notice(
     final_state = await agent_app.ainvoke(initial_state)
     
     return {
-        "extracted_text": notice_text[:200] + "...", # Preview
+        "extracted_text": notice_text[:200] + "...",
         "reply": final_state.get("draft_reply"),
         "relevant_laws": [doc['doc_id'] for doc in final_state.get("relevant_docs", [])],
         "confidence": final_state.get("confidence_score"),
         "audit_passed": final_state.get("audit_passed")
     }
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    message: str
+    notice_context: Optional[str] = ""
+    draft_reply: Optional[str] = ""
+    history: Optional[List[ChatMessage]] = []
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest):
+    history_text = ""
+    for msg in (request.history or []):
+        history_text += f"{msg.role.upper()}: {msg.content}\n"
+
+    search_results = searcher.search(request.message, top_k=3)
+    knowledge = ""
+    for doc in search_results:
+        knowledge += f"[{doc['doc_id']}]: {doc['text']}\n\n"
+
+    prompt = f"""You are TaxShield AI, an expert GST legal assistant for India. Answer the user's question clearly and professionally.
+
+RELEVANT LEGAL DOCUMENTS FROM KNOWLEDGE BASE:
+{knowledge if knowledge else 'No specific documents found.'}
+
+{f"NOTICE CONTEXT (uploaded by user):{chr(10)}{request.notice_context}" if request.notice_context else ""}
+
+{f"PREVIOUSLY DRAFTED REPLY:{chr(10)}{request.draft_reply}" if request.draft_reply else ""}
+
+CONVERSATION HISTORY:
+{history_text}
+
+USER QUESTION: {request.message}
+
+Instructions:
+- Cite specific circular numbers and section numbers when available.
+- If the knowledge base documents are relevant, reference them.
+- If you don't know the answer, say so honestly.
+- Keep the response concise but thorough."""
+
+    try:
+        response = generate(prompt)
+        cited_docs = [doc['doc_id'] for doc in search_results]
+        return {"reply": response, "sources": cited_docs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
