@@ -1,6 +1,7 @@
 import time
 import uuid
 import logging
+import json
 from typing import Callable, Awaitable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -84,4 +85,4 @@ class GlobalErrorHandlerMiddleware(BaseHTTPMiddleware):
                 content={"error": "Internal Server Error", "detail": "An unexpected error occurred. Please contact support."},
             )
 
-import json
+
