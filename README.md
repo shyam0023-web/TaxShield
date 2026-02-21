@@ -1,6 +1,6 @@
 # TaxShield: AI-Powered GST Notice Reply Automation
 
-![Python](https://img.shields.io/badge/Python-3.11-yellow) ![FastAPI](https://img.shields.io/badge/FastAPI-0.104-green) ![Next.js](https://img.shields.io/badge/Next.js-14-black) ![License](https://img.shields.io/badge/License-MIT-blue)
+![Python](https://img.shields.io/badge/Python-3.11-yellow) ![FastAPI](https://img.shields.io/badge/FastAPI-0.104-green) ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 
 **TaxShield** is an AI-powered GST notice reply automation platform using Agentic RAG with a multi-agent pipeline. It automatically extracts notice details, validates limitation periods, retrieves relevant legal circulars, and drafts professional legal responses with built-in hallucination auditing.
 
@@ -119,6 +119,3 @@ We welcome contributions! Key areas to work on:
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
-
-## 📜 License
-TaxShield is open-source software licensed under the MIT license.
