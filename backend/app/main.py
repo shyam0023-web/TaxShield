@@ -8,7 +8,6 @@ from app.watchdog.timebar import calculate_timebar, TimeBarRequest, TimeBarResul
 from app.retrieval.hybrid import searcher
 from app.agents.parsing import parse_notice
 from app.agents.graph import app as agent_app
-from app.models.schemas import NoticeRequest
 from app.llm.groq_client import generate
 from app.logger import logger
 from app.middleware import RequestLoggingMiddleware, RateLimitMiddleware, GlobalErrorHandlerMiddleware

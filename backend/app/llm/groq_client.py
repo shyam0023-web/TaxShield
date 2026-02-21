@@ -13,7 +13,7 @@ def get_llm():
     )
 
 def generate(prompt: str) -> str:
-    llm = get_llm()
+    llm = get_shared_llm()
     response = llm.invoke([HumanMessage(content=prompt)])
     return response.content
 
