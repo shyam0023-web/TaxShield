@@ -8,6 +8,9 @@
 
 - **Risk-Based Routing**: Classifies notices as LOW/MEDIUM/HIGH risk — simple notices get fast template replies, complex cases get full legal analysis
 - **Live Agent Chat**: Real-time conversational agent that interviews clients, searches case laws mid-conversation, and shows its reasoning
+- **Clickable Citations**: Every case law reference in the draft is a hyperlink — hover shows the exact paragraph from the original tribunal ruling in a side panel
+- **OCR Confidence Highlighting**: Low-confidence OCR values are highlighted in yellow on the original PDF — CA clicks to correct, preventing downstream errors
+- **Multi-Client Dashboard**: Grid view for CA firms — Client Name | Notice Section | Deadline | AI Draft Status — manage 100+ clients at a glance
 - **Time-Bar Watchdog**: Automatically calculates limitation periods under Section 73/74 of the CGST Act to dismiss invalid notices instantly
 - **Hybrid RAG Search**: Combines FAISS vector search with BM25 keyword search using Reciprocal Rank Fusion for optimal document retrieval
 - **PII Redaction**: In-memory redaction of PAN/Aadhaar before any data reaches the LLM — DPDP Act compliant
