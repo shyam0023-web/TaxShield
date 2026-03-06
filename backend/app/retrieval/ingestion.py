@@ -1,3 +1,8 @@
+"""
+TaxShield — Ingestion
+Purpose: 2-bucket structuring (legal_principle + procedure) before embedding
+Status: PARTIALLY IMPLEMENTED — needs 2-bucket logic
+"""
 import json
 import os
 from typing import List, Dict

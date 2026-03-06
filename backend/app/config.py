@@ -1,27 +1,25 @@
-import os
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
 
-load_dotenv()
+class Settings(BaseSettings):
+    # LLM
+    GEMINI_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+    
+    # Database (Supabase)
+    DATABASE_URL: str = ""
+    
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379"
+    
+    # Langfuse
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    
+    # Cohere (reranker)
+    COHERE_API_KEY: str = ""
+    
+    class Config:
+        env_file = ".env"
 
-APP_NAME = "TaxShield"
-APP_VERSION = "0.1.0"
-APP_DESCRIPTION = "AI-powered GST notice response system"
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-LLM_MODEL = "llama-3.3-70b-versatile"
-LLM_TEMPERATURE = 0.3
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-
-FAISS_K = 15
-BM25_K = 15
-MIN_DOCS_REQUIRED = 3
-
-SECTION_73_YEARS = 3
-SECTION_74_YEARS = 5
-
-CONFIDENCE_APPROVE = 0.90
-CONFIDENCE_REVIEW = 0.70
-CONFIDENCE_ABSTAIN = 0.70
-
-MAX_RETRIES = 3
+settings = Settings()

@@ -1,20 +1,15 @@
+"""
+TaxShield — Logging Middleware
+Purpose: Request/response logging with unique request IDs
+Status: IMPLEMENTED
+"""
 import time
 import uuid
-import logging
 import json
 from typing import Callable, Awaitable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 from app.logger import logger
-from fastapi.responses import JSONResponse
-import collections
-
-# Simple in-memory rate limiter (Token Bucket)
-# Dictionary: IP -> [timestamp1, timestamp2, ...]
-RATE_LIMIT_DATA = collections.defaultdict(list)
-RATE_LIMIT_WINDOW = 60  # seconds
-RATE_LIMIT_MAX_REQUESTS = 20  # requests per window
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -56,33 +51,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             }))
             raise  # Re-raise to let ErrorHandlingMiddleware catch it
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        client_ip = request.client.host
-        current_time = time.time()
-        
-        # Remove old timestamps
-        RATE_LIMIT_DATA[client_ip] = [t for t in RATE_LIMIT_DATA[client_ip] if current_time - t < RATE_LIMIT_WINDOW]
-        
-        if len(RATE_LIMIT_DATA[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
-            logger.warning(f"Rate limit exceeded for IP: {client_ip}")
-            return JSONResponse(
-                status_code=429,
-                content={"error": "Rate limit exceeded. Try again later."},
-            )
-            
-        RATE_LIMIT_DATA[client_ip].append(current_time)
-        return await call_next(request)
 
-class GlobalErrorHandlerMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        try:
-            return await call_next(request)
-        except Exception as exc:
-            logger.exception("Global exception handler caught error")
-            return JSONResponse(
-                status_code=500,
-                content={"error": "Internal Server Error", "detail": "An unexpected error occurred. Please contact support."},
-            )
+def setup_logging(app):
+    """Setup request logging for the FastAPI application"""
+    app.add_middleware(RequestLoggingMiddleware)
 
 

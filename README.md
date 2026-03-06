@@ -36,11 +36,15 @@ The system uses a stateless FastAPI backend with Redis caching and PostgreSQL pe
 | Component | Technology |
 |-----------|------------|
 | **Backend** | FastAPI, Celery, Redis |
-| **Frontend** | Next.js |
+| **Frontend** | Next.js, shadcn/ui, Framer Motion |
 | **AI/LLM** | LangChain, LangGraph, Gemini 2.0 Flash / Pro |
-| **RAG** | FAISS + BM25 (circulars), Qdrant (case laws) |
+| **Agent Observability** | Langfuse (reasoning traces, tool calls, LLM cost) |
+| **Embeddings** | Gemini Embedding (`gemini-embedding-001`) |
+| **RAG** | PostgreSQL `pgvector` + BM25 hybrid (2-bucket structured) |
 | **OCR** | PaddleOCR (Hindi+English) |
-| **Database** | PostgreSQL |
+| **Indian Languages** | Sarvam AI (Hindi legal comprehension) |
+| **Database** | PostgreSQL + pgvector |
+| **Cache** | Upstash Redis (serverless) |
 | **Document Output** | python-docx, openpyxl |
 | **Authentication** | JWT + PostgreSQL RLS |
 
