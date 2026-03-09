@@ -1,42 +1,43 @@
 """
-TaxShield — Agent State
-Purpose: TypedDict for shared pipeline state across 4-agent workflow
-Status: IMPLEMENTED
+TaxShield — Pipeline State
+TypedDict for shared state across all 4 agents.
 """
-from typing import TypedDict, List, Dict, Any, Optional, Annotated
-from operator import add
+from typing import TypedDict, Optional, Any
 
-
-class AgentState(TypedDict):
-    # Input from notice upload
-    notice_text: str
-    fy: str
-    section: int
-    case_id: Optional[str]
+class PipelineState(TypedDict, total=False):
+    # Input
+    pdf_bytes: bytes
+    case_id: str
     
-    # Agent 1: Document Processor output
-    extracted_entities: Dict[str, Any]
-    time_bar_status: bool
-    document_structure: Dict[str, str]
+    # Agent 1 output
+    raw_text: str
+    ocr_metadata: dict
+    entities: dict
+    notice_annotations: list
+    time_bar: dict
+    redacted_fields: list
     
-    # Agent 2: Risk Router output
-    risk_classification: str  # LOW/MEDIUM/HIGH
-    confidence_score: float
+    # Agent 2 output
+    risk_level: str         # LOW, MEDIUM, HIGH
+    risk_score: float       # 0-1
+    risk_reasoning: str
+    deadline: dict          # {days_left, urgency}
+    is_time_barred: bool    # Final decision (by Agent 2)
     
-    # Agent 3: Legal Analyst output
-    relevant_circulars: List[Dict[str, Any]]
-    relevant_case_laws: List[Dict[str, Any]]
-    legal_analysis: str
-    client_interview: List[Dict[str, str]]
+    # Agent 3 output  
+    interview_answers: dict
+    retrieved_circulars: list
+    retrieved_case_laws: list
+    defense_strategy: Optional[str]
     
-    # Agent 4: Master Drafter output
-    draft_reply: str
-    defense_strategy: str
-    supporting_documents: List[str]
-    procedural_compliance: bool
+    # Agent 4 output
+    draft_docx_path: Optional[str]
+    draft_xlsx_path: Optional[str]
+    cover_letter_path: Optional[str]
+    citation_report: Optional[dict]
+    accuracy_report: Optional[dict]
     
-    # Shared state
-    messages: Annotated[List[Dict[str, Any]], add]
-    audit_passed: bool
-    error: Optional[str]
-    metadata: Dict[str, Any]
+    # Metadata
+    human_review_notes: str
+    escalation_history: list
+    current_agent: str

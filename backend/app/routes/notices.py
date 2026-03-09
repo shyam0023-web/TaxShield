@@ -1,58 +1,45 @@
 """
 TaxShield — Notices Routes
 Purpose: PDF upload and notice processing endpoints
-Status: IMPLEMENTED
+Status: PLACEHOLDER — wired to graph but agents are stubs
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from app.agents.parsing import parse_notice
-from app.agents.graph import app as agent_app
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from app.agents.graph import graph
 from app.logger import logger
 
 router = APIRouter()
 
 
 @router.post("/notices/upload")
-async def upload_notice(
-    file: UploadFile = File(...),
-    fy: str = Form(...),
-    section: int = Form(...)
-):
-    """Upload PDF -> Parse -> Run Agents"""
-    
-    # 1. Read & Parse PDF
+async def upload_notice(file: UploadFile = File(...)):
+    """Upload PDF → Run 4-agent pipeline"""
     content = await file.read()
-    notice_text = parse_notice(content)
     
-    if not notice_text:
-        raise HTTPException(status_code=400, detail="Could not extract text from PDF")
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
     
-    # 2. Setup State
+    # Run the agent pipeline
     initial_state = {
-        "notice_text": notice_text,
-        "fy": fy,
-        "section": section,
-        "is_time_barred": False,
-        "relevant_docs": [],
-        "draft_reply": "",
-        "confidence_score": 0.0,
-        "audit_passed": False,
-        "messages": []
+        "pdf_bytes": content,
+        "case_id": file.filename or "unknown",
+        "current_agent": "start"
     }
     
-    # 3. Run Agents
-    final_state = await agent_app.ainvoke(initial_state)
+    try:
+        final_state = await graph.ainvoke(initial_state)
+    except Exception as e:
+        logger.exception("Agent pipeline failed")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
     
     return {
-        "extracted_text": notice_text[:200] + "...",
-        "reply": final_state.get("draft_reply"),
-        "relevant_laws": [doc['doc_id'] for doc in final_state.get("relevant_docs", [])],
-        "confidence": final_state.get("confidence_score"),
-        "audit_passed": final_state.get("audit_passed")
+        "case_id": final_state.get("case_id"),
+        "risk_level": final_state.get("risk_level", "UNKNOWN"),
+        "current_agent": final_state.get("current_agent"),
+        "status": "processed"
     }
 
 
 @router.get("/notices/{id}")
 def get_notice(id: str):
     """Get notice by ID"""
-    # TODO: Implement notice retrieval from database
     return {"notice_id": id, "status": "PLACEHOLDER"}

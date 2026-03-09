@@ -13,8 +13,16 @@ langchain>=0.1.0
 langchain-groq>=0.1.0
 # Data Validation
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
 # PDF Processing (for parsing agent)
 pypdf>=3.0.0
+PyMuPDF>=1.23.0
+# LLM Clients
+google-generativeai>=0.8.0
+groq>=0.4.0
+# OCR (fallbacks)
+paddleocr>=2.7.0
+pytesseract>=0.3.10
 # Prompts
 jinja2>=3.0.0
 
