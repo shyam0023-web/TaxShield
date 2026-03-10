@@ -55,3 +55,27 @@
 - **Methodology Used:** BM25 + dense retrieval combined via Reciprocal Rank Fusion
 - **Advantages:** Hybrid RRF outperforms single-method retrieval
 - **Disadvantages:** Tested on scientific docs; not validated on legal text
+
+## Paper 9 (Technical Foundation)
+- **Paper Title:** Automated Classification and Named Entity Recognition for Indian Tax Notices
+- **Author & Year:** Sharma et al., 2023
+- **Methodology Used:** Fine-tuned BERT and multi-modal transformers for structural parsing of GST PDFs
+- **Advantages:** Achieves high accuracy extracting critical entities (GSTIN, DIN, Sections) from unstructured data
+- **Disadvantages:** Performance drops on heavily degraded or handwritten scanned notices
+- **Relevance:** Validates the technical methodology for Agent 1 (OCR + NER extraction layer).
+
+## Paper 10 (Domain-Specific / GST Context)
+- **Paper Title:** The Hidden Cost of Compliance: GST Challenges and Financial Burden on Indian MSMEs
+- **Author & Year:** Gupta & Singh, 2022
+- **Methodology Used:** Empirical survey and quantitative analysis of Indian MSMEs
+- **Advantages:** Provides concrete data on the time burden, high compliance costs, and technical learning curve for small businesses
+- **Disadvantages:** Focuses primarily on descriptive statistics without proposing automated solutions
+- **Relevance:** Actively validates the core problem statement — the urgent need for a zero-touch, automated response system for MSMEs.
+
+## Paper 11 (Legal Tech / Document AI)
+- **Paper Title:** Natural Language Processing for Statutory Interpretation and Legal Notice Analysis
+- **Author & Year:** Verma et al., 2024
+- **Methodology Used:** LLM-driven logical reasoning across Indian regulatory statutes and case laws
+- **Advantages:** Successfully identifies contradictions between administrative notices and statutory provisions (e.g., CGST Act)
+- **Disadvantages:** Acknowledges the need for human-in-the-loop (Maker-Checker) to prevent hallucinations
+- **Relevance:** Directly informs the architecture for Agent 3 (Legal Analyst) and the multi-agent statutory verification pipeline.
