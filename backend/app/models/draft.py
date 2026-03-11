@@ -3,8 +3,7 @@ TaxShield — Draft Model
 Purpose: SQLAlchemy model for drafts table
 Status: PLACEHOLDER — to be implemented
 """
-from sqlalchemy import Column, String, Text, DateTime, Boolean
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy import Column, String, Text, DateTime, Boolean, JSON
 from app.database import Base
 import uuid
 
@@ -12,11 +11,11 @@ import uuid
 class Draft(Base):
     __tablename__ = "drafts"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    notice_id = Column(UUID(as_uuid=True), nullable=False)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    notice_id = Column(String(36), nullable=False)
     draft_content = Column(Text, nullable=False)
     defense_strategy = Column(Text)
-    supporting_documents = Column(ARRAY(String))
+    supporting_documents = Column(JSON)
     procedural_compliance = Column(Boolean, default=False)
     approved = Column(Boolean, default=False)
     feedback = Column(Text)

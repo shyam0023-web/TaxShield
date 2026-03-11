@@ -1,26 +1,48 @@
+"""
+TaxShield — Hybrid Search (BM25 + FAISS with RRF fusion)
+Lazy-loads SentenceTransformer to avoid 500MB RAM + slow startup.
+"""
 import numpy as np
 import re
+import logging
 from typing import List, Dict
 import faiss
 from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
 from app.retrieval.ingestion import load_circulars, LegalDocument
-from app.config import EMBEDDING_MODEL, FAISS_K, BM25_K
+
+logger = logging.getLogger(__name__)
+
+# Search defaults — override via config if needed
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+FAISS_K = 10
+BM25_K = 10
+
 
 def simple_tokenize(text: str) -> List[str]:
     return re.findall(r"\w+", text.lower())
+
 
 class HybridSearcher:
     def __init__(self):
         self.documents: List[LegalDocument] = []
         self.bm25 = None
-        self.encoder = SentenceTransformer(EMBEDDING_MODEL)
+        self._encoder = None  # Lazy-loaded
         self.index = None
+
+    @property
+    def encoder(self):
+        """Lazy-load SentenceTransformer only when first needed."""
+        if self._encoder is None:
+            from sentence_transformers import SentenceTransformer
+            logger.info(f"Loading embedding model: {EMBEDDING_MODEL}")
+            self._encoder = SentenceTransformer(EMBEDDING_MODEL)
+            logger.info("Embedding model loaded successfully")
+        return self._encoder
 
     def build_index(self):
         self.documents = load_circulars()
         if not self.documents:
-            print("No documents to index!")
+            logger.warning("No documents to index!")
             return
         
         tokenized_corpus = [simple_tokenize(doc.text) for doc in self.documents]
@@ -33,7 +55,7 @@ class HybridSearcher:
         self.index = faiss.IndexFlatL2(dimension)
         self.index.add(np.array(embeddings).astype('float32'))
         
-        print(f"✅ Indices built with {len(self.documents)} documents, dim={dimension}")
+        logger.info(f"Indices built with {len(self.documents)} documents, dim={dimension}")
 
     def search(self, query: str, top_k: int = 5) -> List[Dict]:
         if not self.documents:
@@ -86,6 +108,7 @@ class HybridSearcher:
             
         return results
 
+
 searcher = HybridSearcher()
 
 if __name__ == "__main__":
@@ -93,3 +116,4 @@ if __name__ == "__main__":
     results = searcher.search("limitation period section 73")
     for r in results:
         print(f"[{r['score']:.4f}] {r['doc_id']} - {r['text'][:50]}...")
+

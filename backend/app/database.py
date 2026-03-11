@@ -1,16 +1,25 @@
 """
 TaxShield — Database Configuration
-Purpose: SQLAlchemy async engine and session setup for PostgreSQL + pgvector
-Status: PLACEHOLDER — to be implemented
+Async SQLAlchemy engine and session setup.
+Supports SQLite (dev) and PostgreSQL (production).
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from app.config import settings
 
+# Convert sync URL to async URL if needed
+db_url = settings.DATABASE_URL
+if db_url.startswith("sqlite:///"):
+    # SQLite needs the aiosqlite driver for async
+    db_url = db_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+elif db_url.startswith("postgresql://"):
+    # PostgreSQL needs asyncpg driver for async
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 # Create async engine
 engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=True,
+    db_url,
+    echo=settings.DEBUG,
     future=True
 )
 
@@ -38,3 +47,4 @@ async def init_db():
     """Initialize database tables"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+

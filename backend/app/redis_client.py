@@ -1,6 +1,6 @@
 """Redis client for TaxShield — used for caching, rate limiting, and queue broker."""
 import redis.asyncio as aioredis
-from app.config import REDIS_URL
+from app.config import settings
 from app.logger import logger
 
 
@@ -13,7 +13,7 @@ async def get_redis() -> aioredis.Redis:
     if _redis_pool is None:
         try:
             _redis_pool = aioredis.from_url(
-                REDIS_URL,
+                settings.REDIS_URL,
                 encoding="utf-8",
                 decode_responses=True,
                 max_connections=20,

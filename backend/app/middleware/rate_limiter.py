@@ -1,22 +1,23 @@
 """
 TaxShield — Rate Limiter Middleware
-Purpose: Token bucket rate limiting for API endpoints
-Status: IMPLEMENTED
+In-memory token bucket rate limiting with periodic cleanup.
 """
 import time
+import asyncio
 import collections
-import json
 from typing import Callable, Awaitable
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.logger import logger
 
-# Simple in-memory rate limiter (Token Bucket)
+# Simple in-memory rate limiter (Sliding Window)
 # Dictionary: IP -> [timestamp1, timestamp2, ...]
-RATE_LIMIT_DATA = collections.defaultdict(list)
+RATE_LIMIT_DATA: dict[str, list[float]] = collections.defaultdict(list)
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX_REQUESTS = 20  # requests per window
+CLEANUP_INTERVAL = 300  # cleanup stale IPs every 5 minutes
+_cleanup_task = None
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -24,8 +25,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host
         current_time = time.time()
         
-        # Remove old timestamps
-        RATE_LIMIT_DATA[client_ip] = [t for t in RATE_LIMIT_DATA[client_ip] if current_time - t < RATE_LIMIT_WINDOW]
+        # Remove old timestamps for this IP
+        RATE_LIMIT_DATA[client_ip] = [
+            t for t in RATE_LIMIT_DATA[client_ip]
+            if current_time - t < RATE_LIMIT_WINDOW
+        ]
         
         if len(RATE_LIMIT_DATA[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
             logger.warning(f"Rate limit exceeded for IP: {client_ip}")
@@ -38,6 +42,32 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+async def _periodic_cleanup():
+    """Background task to remove stale IPs from rate limit data."""
+    while True:
+        await asyncio.sleep(CLEANUP_INTERVAL)
+        current_time = time.time()
+        stale_ips = [
+            ip for ip, timestamps in RATE_LIMIT_DATA.items()
+            if not timestamps or (current_time - max(timestamps)) > RATE_LIMIT_WINDOW
+        ]
+        for ip in stale_ips:
+            del RATE_LIMIT_DATA[ip]
+        if stale_ips:
+            logger.debug(f"Rate limiter cleanup: removed {len(stale_ips)} stale IPs")
+
+
 def setup_rate_limiting(app):
     """Setup rate limiting for the FastAPI application"""
     app.add_middleware(RateLimitMiddleware)
+
+    @app.on_event("startup")
+    async def start_cleanup():
+        global _cleanup_task
+        _cleanup_task = asyncio.create_task(_periodic_cleanup())
+
+    @app.on_event("shutdown")
+    async def stop_cleanup():
+        global _cleanup_task
+        if _cleanup_task:
+            _cleanup_task.cancel()

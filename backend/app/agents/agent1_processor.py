@@ -46,7 +46,12 @@ class Agent1Processor:
             logger.info(f"OCR complete: {ocr_result['total_pages']} pages, {len(raw_text)} chars")
         except Exception as e:
             logger.error(f"OCR failed: {e}")
-            return {"error": f"OCR extraction failed: {str(e)}", "stage": "ocr"}
+            return {
+                "processing_status": "failed",
+                "error": f"OCR extraction failed: {str(e)}",
+                "stage": "ocr",
+                "current_agent": "agent1"
+            }
         
         # ═══ Step 2: Sanitize ═══
         logger.info("Step 2/6: Input sanitization")
@@ -128,6 +133,9 @@ class Agent1Processor:
                 "injections_found": sanitize_result["injections_found"],
                 "flags": sanitize_result["flags"]
             },
+            
+            # Processing status — explicit signal for Agent 2
+            "processing_status": "partial" if errors else "complete",
             
             # Processing errors (non-fatal)
             "processing_errors": errors,

@@ -4,6 +4,7 @@ Classifies risk and makes section-aware time-bar decision.
 Routes to Agent 3 with appropriate tool set.
 """
 from app.llm.router import llm_router
+from app.tools.timebar import TimeBarCalculator
 import json
 import logging
 
@@ -17,14 +18,8 @@ class Agent2Router:
     3. Determines tool set for Agent 3
     """
     
-    # Section → time limit (years)
-    SECTION_TIME_LIMITS = {
-        "73": 3,     # Normal
-        "74": 5,     # Fraud / willful misstatement
-        "129": 0,    # Detention — immediate
-        "130": 0,    # Confiscation — immediate
-        "132": 999,  # Prosecution — no limit
-    }
+    # Import time limits from timebar (single source of truth — Issue 6A)
+    SECTION_TIME_LIMITS = TimeBarCalculator.SECTION_LIMITS
     
     # Tool sets by risk level
     TOOL_SETS = {
@@ -132,6 +127,21 @@ First 1000 chars of notice:
         Returns updates for the global PipelineState.
         """
         logger.info("=== Agent 2: Risk Router ===")
+        
+        # Check Agent 1 processing status
+        processing_status = state_dict.get("processing_status", "unknown")
+        
+        if processing_status == "failed":
+            logger.error("Agent 1 failed — cannot route. Returning UNKNOWN risk.")
+            return {
+                "current_agent": "agent2",
+                "risk_level": "UNKNOWN",
+                "risk_reasoning": f"Agent 1 failed: {state_dict.get('error', 'unknown error')}",
+                "processing_errors": state_dict.get("processing_errors", []),
+            }
+        
+        if processing_status == "partial":
+            logger.warning(f"Agent 1 partial — some steps failed: {state_dict.get('processing_errors', [])}")
         
         entities = state_dict.get("entities", {})
         raw_text = state_dict.get("raw_text", "")

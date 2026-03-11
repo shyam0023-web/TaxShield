@@ -28,3 +28,6 @@ jinja2>=3.0.0
 
 # Testing
 pytest>=9.0.0
+
+# Async DB drivers
+aiosqlite>=0.20.0

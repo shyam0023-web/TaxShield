@@ -6,6 +6,7 @@ from langgraph.graph import StateGraph, END
 from app.agents.state import PipelineState
 from app.agents.agent1_processor import agent1
 from app.agents.agent2_router import agent2
+from app.agents.agent4_drafter import agent4
 import logging
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,10 @@ async def agent3_node(state: PipelineState) -> dict:
 
 
 async def agent4_node(state: PipelineState) -> dict:
-    """Master Drafter — placeholder."""
-    logger.info("Running Agent 4 Node (placeholder)...")
-    return {"current_agent": "agent4"}
+    """Master Drafter: Generate draft reply from pipeline output."""
+    logger.info("Running Agent 4 Node...")
+    result = await agent4.process(state)
+    return result
 
 
 # Build the graph

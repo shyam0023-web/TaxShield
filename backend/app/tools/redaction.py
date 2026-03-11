@@ -5,6 +5,7 @@ DPDP Act compliant — PII never leaves the server.
 """
 import re
 import logging
+from app.tools.patterns import PII_PATTERNS, KEEP_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -12,34 +13,9 @@ logger = logging.getLogger(__name__)
 class PIIRedactor:
     """Redacts PII from text. Returns redacted text + list of redacted fields."""
     
-    PATTERNS = {
-        "PAN": {
-            "regex": r'\b[A-Z]{5}\d{4}[A-Z]\b',
-            "replacement": "[PAN_REDACTED]"
-        },
-        "AADHAAR": {
-            "regex": r'\b\d{4}\s?\d{4}\s?\d{4}\b',
-            "replacement": "[AADHAAR_REDACTED]"
-        },
-        "PHONE": {
-            "regex": r'\b(?:\+91[\-\s]?)?[6-9]\d{9}\b',
-            "replacement": "[PHONE_REDACTED]"
-        },
-        "EMAIL": {
-            "regex": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-            "replacement": "[EMAIL_REDACTED]"
-        },
-        "BANK_ACCOUNT": {
-            "regex": r'\b\d{9,18}\b',  # Conservative — only in banking context
-            "replacement": "[BANK_REDACTED]"
-        }
-    }
-    
-    # Fields to KEEP (not redact) — these are business identifiers, not personal PII
-    KEEP_PATTERNS = [
-        r'\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}',  # GSTIN (15 chars)
-        r'[A-Z]{3}[A-Z\d]{17}',  # DIN (20 chars)
-    ]
+    # Imported from app.tools.patterns (single source of truth)
+    PATTERNS = PII_PATTERNS
+    KEEP_PATTERNS = KEEP_PATTERNS
     
     def redact(self, text: str) -> dict:
         """

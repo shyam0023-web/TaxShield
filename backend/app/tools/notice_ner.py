@@ -3,18 +3,18 @@ TaxShield — GST Notice Named Entity Recognition
 Hybrid: Regex for structured fields (GSTIN, DIN) + LLM for unstructured
 """
 import re
+import json
 from typing import Dict, List, Optional
 from app.llm.gemini_client import gemini
 from app.logger import logger
+from app.tools.patterns import (
+    GSTIN_PATTERN, DIN_PATTERN, SECTION_PATTERN,
+    AMOUNT_PATTERN, PAN_PATTERN, DATE_PATTERNS,
+)
 
 
 class NoticeNER:
-    # Regex patterns for deterministic extraction
-    GSTIN_PATTERN = r'\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}'
-    DIN_PATTERN = r'[A-Z]{3}[A-Z\d]{17}'  # 20-char DIN format
-    SECTION_PATTERN = r'[Ss]ection\s+(\d+[A-Za-z]*(?:\(\d+\))*)'
-    AMOUNT_PATTERN = r'₹?\s*[\d,]+\.?\d*'
-    PAN_PATTERN = r'[A-Z]{5}\d{4}[A-Z]{1}'
+    # Patterns imported from app.tools.patterns (single source of truth)
     
     def validate_gstin_checksum(self, gstin: str) -> bool:
         """Validate GSTIN using checksum algorithm."""
@@ -26,7 +26,7 @@ class NoticeNER:
             return False
         # PAN check (chars 3-12)
         pan = gstin[2:12]
-        if not re.match(self.PAN_PATTERN, pan):
+        if not re.match(PAN_PATTERN, pan):
             return False
         return True
     
@@ -37,18 +37,18 @@ class NoticeNER:
             
             # === Deterministic extraction (regex + checksum) ===
             # GSTIN
-            gstins = re.findall(self.GSTIN_PATTERN, text)
+            gstins = re.findall(GSTIN_PATTERN, text)
             entities["GSTIN"] = [
                 {"value": g, "valid": self.validate_gstin_checksum(g), "method": "regex+checksum"}
                 for g in set(gstins)
             ]
             
             # DIN
-            dins = re.findall(self.DIN_PATTERN, text)
+            dins = re.findall(DIN_PATTERN, text)
             entities["DIN"] = [{"value": d, "method": "regex"} for d in set(dins)]
             
             # Sections
-            sections = re.findall(self.SECTION_PATTERN, text)
+            sections = re.findall(SECTION_PATTERN, text)
             entities["SECTIONS"] = list(set(sections))
             
             # === LLM extraction (for complex/unstructured fields) ===
@@ -73,7 +73,6 @@ class NoticeNER:
             llm_entities = await gemini.generate(llm_prompt, json_mode=True)
             
             # Parse JSON response
-            import json
             try:
                 entities["llm_extracted"] = json.loads(llm_entities)
             except json.JSONDecodeError:
@@ -89,7 +88,7 @@ class NoticeNER:
     async def extract_amounts(self, text: str) -> Dict[str, float]:
         """Extract and parse monetary amounts."""
         try:
-            amounts = re.findall(self.AMOUNT_PATTERN, text)
+            amounts = re.findall(AMOUNT_PATTERN, text)
             parsed_amounts = []
             
             for amount in amounts:
@@ -113,14 +112,9 @@ class NoticeNER:
     async def extract_dates(self, text: str) -> List[str]:
         """Extract dates in various formats."""
         try:
-            date_patterns = [
-                r'\b\d{2}-\d{2}-\d{4}\b',  # DD-MM-YYYY
-                r'\b\d{2}/\d{2}/\d{4}\b',  # DD/MM/YYYY
-                r'\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\b',  # DD Month YYYY
-            ]
             
             all_dates = []
-            for pattern in date_patterns:
+            for pattern in DATE_PATTERNS:
                 dates = re.findall(pattern, text, re.IGNORECASE)
                 all_dates.extend(dates)
             
@@ -179,14 +173,14 @@ class NoticeNER:
             critical = {}
             
             # GSTIN
-            gstins = re.findall(self.GSTIN_PATTERN, text)
+            gstins = re.findall(GSTIN_PATTERN, text)
             critical["GSTIN"] = [
                 {"value": g, "valid": self.validate_gstin_checksum(g)}
                 for g in set(gstins)
             ]
             
             # DIN
-            dins = re.findall(self.DIN_PATTERN, text)
+            dins = re.findall(DIN_PATTERN, text)
             critical["DIN"] = [{"value": d} for d in set(dins)]
             
             # Amounts
@@ -194,7 +188,7 @@ class NoticeNER:
             critical["AMOUNTS"] = amounts
             
             # Sections
-            sections = re.findall(self.SECTION_PATTERN, text)
+            sections = re.findall(SECTION_PATTERN, text)
             critical["SECTIONS"] = list(set(sections))
             
             return critical

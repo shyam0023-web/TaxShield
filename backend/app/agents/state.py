@@ -10,6 +10,7 @@ class PipelineState(TypedDict, total=False):
     case_id: str
     
     # Agent 1 output
+    processing_status: str  # "complete", "partial", "failed"
     raw_text: str
     ocr_metadata: dict
     entities: dict
@@ -31,6 +32,9 @@ class PipelineState(TypedDict, total=False):
     defense_strategy: Optional[str]
     
     # Agent 4 output
+    draft_reply: Optional[str]
+    draft_type: Optional[str]      # "time_barred" or "merit_based"
+    draft_error: Optional[str]
     draft_docx_path: Optional[str]
     draft_xlsx_path: Optional[str]
     cover_letter_path: Optional[str]
