@@ -1,66 +1,384 @@
-import UploadNotice from "@/components/UploadNotice";
-import ChatWidget from "@/components/ChatWidget";
+"use client";
 
-export default function Home() {
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { NotificationPanel } from "@/components/NotificationPanel";
+import {
+  FileText,
+  Calendar,
+  IndianRupee,
+  AlertTriangle,
+  Upload,
+  Search,
+  Filter,
+  Clock,
+  CheckCircle2,
+  FileCheck,
+  TrendingUp,
+  ArrowRight,
+  Loader2,
+} from "lucide-react";
+
+interface Notice {
+  id: string;
+  notice_number: string;
+  date: string;
+  section: string;
+  demand_amount: number;
+  risk_level: "LOW" | "MEDIUM" | "HIGH";
+  status: "Processing" | "Draft Ready" | "Approved";
+  taxpayer_name?: string;
+}
+
+const API_BASE = "http://localhost:8000";
+
+function formatCurrency(amount: number): string {
+  if (amount === 0) return "—";
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function RiskBadge({ level }: { level: "LOW" | "MEDIUM" | "HIGH" }) {
+  const className = `badge badge-${level.toLowerCase()}`;
+  const icon =
+    level === "HIGH" ? (
+      <AlertTriangle size={11} />
+    ) : level === "MEDIUM" ? (
+      <TrendingUp size={11} />
+    ) : (
+      <CheckCircle2 size={11} />
+    );
+
   return (
-    <div className="min-h-screen gradient-bg relative overflow-hidden">
-      {/* Decorative Background Orbs */}
-      <div className="floating-orb w-96 h-96 bg-indigo-600 top-0 left-1/4 opacity-30" />
-      <div className="floating-orb w-80 h-80 bg-purple-600 bottom-0 right-1/4 opacity-20" style={{ animationDelay: '2s' }} />
-      <div className="floating-orb w-64 h-64 bg-blue-600 top-1/2 right-0 opacity-20" style={{ animationDelay: '4s' }} />
+    <span className={className}>
+      {icon}
+      {level}
+    </span>
+  );
+}
 
-      {/* Header */}
-      <header className="relative z-10 py-12 px-4">
-        <div className="max-w-5xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-2 mb-6">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-sm text-gray-400">Powered by LangGraph + Llama 3.3</span>
+function StatusIndicator({
+  status,
+}: {
+  status: "Processing" | "Draft Ready" | "Approved";
+}) {
+  const statusClass =
+    status === "Processing"
+      ? "status-processing"
+      : status === "Draft Ready"
+        ? "status-draft-ready"
+        : "status-approved";
+
+  return (
+    <span className={`status ${statusClass}`}>
+      <span className="status-dot" />
+      {status}
+    </span>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  value,
+  label,
+  color,
+}: {
+  icon: React.ElementType;
+  value: string | number;
+  label: string;
+  color: string;
+}) {
+  return (
+    <div className="stat-card stagger-item">
+      <div
+        className="stat-card-icon"
+        style={{
+          background: `${color}18`,
+          color: color,
+        }}
+      >
+        <Icon size={20} />
+      </div>
+      <div className="stat-card-value">{value}</div>
+      <div className="stat-card-label">{label}</div>
+    </div>
+  );
+}
+
+function NoticeCard({ notice }: { notice: Notice }) {
+  return (
+    <Link
+      href={`/notice/${notice.id}`}
+      style={{ textDecoration: "none", color: "inherit" }}
+    >
+      <div className="notice-card stagger-item">
+        <div className="notice-card-header">
+          <RiskBadge level={notice.risk_level} />
+          <StatusIndicator status={notice.status} />
+        </div>
+
+        <div className="notice-card-body">
+          <div className="notice-card-number">{notice.notice_number}</div>
+          {notice.taxpayer_name && (
+            <div
+              style={{ fontSize: "var(--font-sm)", color: "var(--text-secondary)" }}
+            >
+              {notice.taxpayer_name}
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "var(--space-3)",
+          }}
+        >
+          <div className="notice-card-meta">
+            <Calendar />
+            {formatDate(notice.date)}
           </div>
+          <div className="notice-card-meta">
+            <FileText />
+            {notice.section}
+          </div>
+        </div>
 
-          <h1 className="text-5xl md:text-6xl font-bold mb-4">
-            <span className="gradient-text">TaxShield</span>
-            <span className="text-white"> AI</span>
-          </h1>
+        <div className="notice-card-footer">
+          <div className="notice-card-amount">
+            {notice.demand_amount > 0 ? (
+              <>
+                <span
+                  style={{
+                    fontSize: "var(--font-xs)",
+                    color: "var(--text-tertiary)",
+                    fontWeight: 400,
+                  }}
+                >
+                  Demand
+                </span>
+                <br />
+                {formatCurrency(notice.demand_amount)}
+              </>
+            ) : (
+              <span style={{ fontSize: "var(--font-sm)", color: "var(--text-tertiary)" }}>
+                No Demand
+              </span>
+            )}
+          </div>
+          <div
+            className="btn btn-ghost"
+            style={{ fontSize: "var(--font-xs)", gap: "var(--space-1)" }}
+          >
+            View Details <ArrowRight size={14} />
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
 
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-            Automated GST Notice Response System with Multi-Agent RAG
+export default function DashboardPage() {
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterRisk, setFilterRisk] = useState<string>("ALL");
+
+  useEffect(() => {
+    const fetchNotices = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/notices`);
+        if (res.ok) {
+          const data = await res.json();
+          setNotices(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        // Backend not running — show empty state
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchNotices();
+  }, []);
+
+  const stats = {
+    total: notices.length,
+    processing: notices.filter((n) => n.status === "Processing").length,
+    draftReady: notices.filter((n) => n.status === "Draft Ready").length,
+    approved: notices.filter((n) => n.status === "Approved").length,
+  };
+
+  const filteredNotices = notices.filter((n) => {
+    const matchesSearch =
+      searchQuery === "" ||
+      n.notice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (n.taxpayer_name &&
+        n.taxpayer_name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchesFilter = filterRisk === "ALL" || n.risk_level === filterRisk;
+
+    return matchesSearch && matchesFilter;
+  });
+
+  return (
+    <>
+      <header className="page-header">
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">
+            Manage and track GST notice responses
           </p>
+        </div>
+        <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
+          <NotificationPanel />
+          <Link href="/upload" className="btn btn-primary">
+            <Upload size={16} />
+            Upload Notice
+          </Link>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="relative z-10 max-w-6xl mx-auto px-4 pb-16">
-        <UploadNotice />
-      </main>
-
-      {/* Footer */}
-      <footer className="relative z-10 text-center py-8 border-t border-white/5">
-        <div className="flex items-center justify-center gap-6 text-sm text-gray-500">
-          <span className="flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            FAISS + BM25 Hybrid Search
-          </span>
-          <span className="w-1 h-1 bg-gray-600 rounded-full" />
-          <span className="flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-            Hallucination Audit
-          </span>
-          <span className="w-1 h-1 bg-gray-600 rounded-full" />
-          <span className="flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Time-Bar Detection
-          </span>
+      <div style={{ padding: "var(--space-8)" }}>
+        {/* Stats */}
+        <div className="stats-grid" style={{ marginBottom: "var(--space-8)" }}>
+          <StatCard
+            icon={FileText}
+            value={stats.total}
+            label="Total Notices"
+            color="#3b82f6"
+          />
+          <StatCard
+            icon={Clock}
+            value={stats.processing}
+            label="Processing"
+            color="#f59e0b"
+          />
+          <StatCard
+            icon={FileCheck}
+            value={stats.draftReady}
+            label="Draft Ready"
+            color="#6366f1"
+          />
+          <StatCard
+            icon={CheckCircle2}
+            value={stats.approved}
+            label="Approved"
+            color="#22c55e"
+          />
         </div>
-      </footer>
 
-      {/* Floating Chat Widget */}
-      <ChatWidget />
-    </div>
+        {/* Search & Filter Bar */}
+        <div
+          style={{
+            display: "flex",
+            gap: "var(--space-3)",
+            marginBottom: "var(--space-6)",
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              minWidth: 280,
+              position: "relative",
+            }}
+          >
+            <Search
+              size={16}
+              style={{
+                position: "absolute",
+                left: "var(--space-4)",
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--text-tertiary)",
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Search by notice number or taxpayer..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "var(--space-3) var(--space-4) var(--space-3) 42px",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-primary)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--text-primary)",
+                fontSize: "var(--font-sm)",
+                outline: "none",
+                minHeight: 44,
+                transition: "all var(--transition-fast)",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "var(--border-active)";
+                e.target.style.boxShadow = "var(--shadow-glow)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "var(--border-primary)";
+                e.target.style.boxShadow = "none";
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
+            {["ALL", "LOW", "MEDIUM", "HIGH"].map((level) => (
+              <button
+                key={level}
+                className={`btn ${filterRisk === level ? "btn-primary" : "btn-outline"}`}
+                onClick={() => setFilterRisk(level)}
+                style={{ fontSize: "var(--font-xs)", padding: "var(--space-2) var(--space-4)" }}
+              >
+                {level === "ALL" ? (
+                  <>
+                    <Filter size={14} />
+                    All
+                  </>
+                ) : (
+                  level
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Notices Grid */}
+        {filteredNotices.length > 0 ? (
+          <div className="notices-grid">
+            {filteredNotices.map((notice) => (
+              <NoticeCard key={notice.id} notice={notice} />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <FileText size={32} />
+            </div>
+            <div className="empty-state-title">No Notices Found</div>
+            <div className="empty-state-text">
+              {searchQuery || filterRisk !== "ALL"
+                ? "Try adjusting your search or filter criteria."
+                : "Upload your first GST notice to get started."}
+            </div>
+            <Link href="/upload" className="btn btn-primary">
+              <Upload size={16} />
+              Upload Notice
+            </Link>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
