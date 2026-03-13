@@ -11,6 +11,8 @@ from app.middleware.logging import setup_logging
 from app.middleware.rate_limiter import setup_rate_limiting
 from app.database import init_db
 from app.logger import logger
+from app.middleware.rate_limiter import _periodic_cleanup
+import asyncio
 
 
 @asynccontextmanager
@@ -25,8 +27,14 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database...")
     await init_db()
     logger.info("Database initialized")
+
+    # Start background tasks
+    cleanup_task = asyncio.create_task(_periodic_cleanup())
+
     yield
-    # Shutdown: cleanup if needed
+
+    # Shutdown: cancel background tasks
+    cleanup_task.cancel()
     logger.info("Shutting down...")
 
 

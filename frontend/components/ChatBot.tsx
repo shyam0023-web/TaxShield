@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { uploadNotice, sendChatMessage, NoticeResponse, ChatMessage } from "@/lib/api";
+import { uploadNotice, sendChatMessage, UploadResponse, ChatMessage } from "@/lib/api";
 
 interface Message {
     role: "user" | "assistant" | "system";
     content: string;
     type?: "text" | "upload" | "result";
-    result?: NoticeResponse;
+    result?: UploadResponse;
     sources?: string[];
 }
 
@@ -61,15 +61,14 @@ export default function ChatBot() {
         setLoading(true);
 
         try {
-            const data = await uploadNotice(file, "2024-25", 73);
-            setNoticeContext(data.extracted_text);
-            setDraftReply(data.reply);
+            const data = await uploadNotice(file);
+            setNoticeContext(data.case_id);
+            setDraftReply(data.draft_status);
 
             const resultMsg: Message = {
                 role: "assistant",
-                content: "",
-                type: "result",
-                result: data,
+                content: `✅ Notice **${data.case_id}** analyzed!\n\n• Risk: **${data.risk_level}**\n• Draft: **${data.draft_status === "draft_ready" ? "Ready" : "Pending"}**\n\nYou can ask me follow-up questions about this notice.`,
+                type: "text",
             };
             setMessages((prev) => [...prev, resultMsg]);
         } catch {
@@ -153,41 +152,26 @@ export default function ChatBot() {
 
                             <div className={`max-w-[75%] ${msg.role === "user" ? "" : ""}`}>
                                 {msg.type === "result" && msg.result ? (
-                                    <div className="glass-card p-5 space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm font-medium text-white">📊 Analysis Result</span>
-                                            <span className={`status-badge text-xs ${msg.result.audit_passed ? "status-success" : "status-warning"}`}>
-                                                {msg.result.audit_passed ? "✓ Verified" : "⚠ Review"}
+                                    <div style={{ padding: "var(--space-5)", background: "var(--bg-surface)", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-lg)" }}>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-3)" }}>
+                                            <span style={{ fontSize: "var(--font-sm)", fontWeight: 500, color: "var(--text-primary)" }}>📊 Analysis Result</span>
+                                            <span className={`badge badge-${msg.result.risk_level?.toLowerCase() || "low"}`}>
+                                                {msg.result.risk_level} Risk
                                             </span>
                                         </div>
-
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                                                <div className="text-xs text-gray-400">Confidence</div>
-                                                <div className="text-xl font-bold gradient-text">{(msg.result.confidence * 100).toFixed(0)}%</div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+                                            <div style={{ padding: "var(--space-3)", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-secondary)" }}>
+                                                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>Status</div>
+                                                <div style={{ fontSize: "var(--font-base)", fontWeight: 600, color: "var(--text-primary)" }}>{msg.result.status}</div>
                                             </div>
-                                            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                                                <div className="text-xs text-gray-400">Citations</div>
-                                                <div className="text-xl font-bold gradient-text">{msg.result.relevant_laws.length}</div>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div className="text-xs text-gray-400 mb-2">Generated Reply</div>
-                                            <div className="bg-black/30 rounded-lg p-3 text-sm text-gray-200 font-mono max-h-60 overflow-y-auto whitespace-pre-wrap border border-white/5">
-                                                {msg.result.reply}
+                                            <div style={{ padding: "var(--space-3)", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-secondary)" }}>
+                                                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>Draft</div>
+                                                <div style={{ fontSize: "var(--font-base)", fontWeight: 600, color: "var(--text-primary)" }}>
+                                                    {msg.result.draft_status === "draft_ready" ? "✅ Ready" : "⏳ Pending"}
+                                                </div>
                                             </div>
                                         </div>
-
-                                        <div className="flex flex-wrap gap-2">
-                                            {msg.result.relevant_laws.map((law, j) => (
-                                                <span key={j} className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-xs border border-indigo-500/30">
-                                                    📄 {law}
-                                                </span>
-                                            ))}
-                                        </div>
-
-                                        <div className="text-xs text-gray-500 pt-1">💬 You can now ask me follow-up questions about this notice.</div>
+                                        <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)", marginTop: "var(--space-3)" }}>💬 You can now ask me follow-up questions about this notice.</div>
                                     </div>
                                 ) : (
                                     <div>

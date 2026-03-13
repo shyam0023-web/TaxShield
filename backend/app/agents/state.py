@@ -30,6 +30,10 @@ class PipelineState(TypedDict, total=False):
     retrieved_circulars: list
     retrieved_case_laws: list
     defense_strategy: Optional[str]
+    contradictions: Optional[dict]
+    procedural_defects: Optional[dict]
+    notice_quality: Optional[str]         # STRONG, MODERATE, WEAK
+    procedural_soundness: Optional[str]   # SOUND, QUESTIONABLE, DEFECTIVE
     
     # Agent 4 output
     draft_reply: Optional[str]

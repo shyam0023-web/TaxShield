@@ -1,6 +1,6 @@
 """
 TaxShield — Rate Limiter Middleware
-In-memory token bucket rate limiting with periodic cleanup.
+In-memory sliding window rate limiting with periodic cleanup.
 """
 import time
 import asyncio
@@ -58,16 +58,9 @@ async def _periodic_cleanup():
 
 
 def setup_rate_limiting(app):
-    """Setup rate limiting for the FastAPI application"""
+    """Setup rate limiting for the FastAPI application.
+    
+    Note: Cleanup task is started/stopped via the app lifespan in main.py.
+    The middleware itself is attached here.
+    """
     app.add_middleware(RateLimitMiddleware)
-
-    @app.on_event("startup")
-    async def start_cleanup():
-        global _cleanup_task
-        _cleanup_task = asyncio.create_task(_periodic_cleanup())
-
-    @app.on_event("shutdown")
-    async def stop_cleanup():
-        global _cleanup_task
-        if _cleanup_task:
-            _cleanup_task.cancel()

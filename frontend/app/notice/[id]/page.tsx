@@ -7,52 +7,19 @@ import {
     ArrowLeft,
     FileText,
     Download,
-    ZoomIn,
-    ZoomOut,
     CheckCircle2,
     Edit3,
     XCircle,
     AlertTriangle,
     BookOpen,
     Copy,
-    ExternalLink,
     Printer,
     Loader2,
+    Shield,
+    Clock,
+    TrendingUp,
 } from "lucide-react";
-
-interface NoticeDetail {
-    id: string;
-    notice_number: string;
-    date: string;
-    section: string;
-    demand_amount: number;
-    risk_level: "LOW" | "MEDIUM" | "HIGH";
-    status: "Processing" | "Draft Ready" | "Approved";
-    taxpayer_name: string;
-    issuing_authority: string;
-    gstin: string;
-    financial_year: string;
-    due_date: string;
-    pdf_url?: string;
-    draft_reply?: DraftReply;
-}
-
-interface DraftReply {
-    subject: string;
-    body: string;
-    citations: Citation[];
-    generated_at: string;
-    confidence_score: number;
-}
-
-interface Citation {
-    id: string;
-    section: string;
-    text: string;
-    source: string;
-}
-
-const API_BASE = "http://localhost:8000";
+import { type NoticeDetail, fetchNotice } from "@/lib/api";
 
 function formatCurrency(amount: number): string {
     return new Intl.NumberFormat("en-IN", {
@@ -68,25 +35,20 @@ export default function NoticeDetailPage() {
     const [notice, setNotice] = useState<NoticeDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [activeCitation, setActiveCitation] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
 
     useEffect(() => {
-        const fetchNotice = async () => {
+        const load = async () => {
             try {
-                const res = await fetch(`${API_BASE}/api/notices/${params.id}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setNotice(data);
-                } else {
-                    setError("Notice not found.");
-                }
+                const data = await fetchNotice(params.id as string);
+                setNotice(data);
             } catch {
-                setError("Could not connect to backend. Make sure the server is running at " + API_BASE);
+                setError("Could not load notice. Make sure the backend is running at http://localhost:8000");
             } finally {
                 setLoading(false);
             }
         };
-        fetchNotice();
+        load();
     }, [params.id]);
 
     // Loading state
@@ -131,6 +93,14 @@ export default function NoticeDetailPage() {
         );
     }
 
+    // Extract display fields from entities
+    const entities = notice.entities || {};
+    const llmExtracted = typeof entities.llm_extracted === "string"
+        ? (() => { try { return JSON.parse(entities.llm_extracted); } catch { return {}; } })()
+        : (entities.llm_extracted || {});
+    const gstins = (entities.GSTIN || []).map((g: any) => g.value || g).filter(Boolean);
+    const primaryGstin = gstins[0] || "—";
+
     const riskClass =
         notice.risk_level === "HIGH"
             ? "badge-high"
@@ -138,7 +108,23 @@ export default function NoticeDetailPage() {
                 ? "badge-medium"
                 : "badge-low";
 
-    const draft = notice.draft_reply;
+    const statusLabel = notice.status === "error" ? "Error"
+        : notice.draft_status === "approved" ? "Approved"
+        : notice.draft_status === "draft_ready" ? "Draft Ready"
+        : notice.status === "processed" ? "Draft Ready"
+        : "Processing";
+
+    const statusClass = statusLabel === "Approved" ? "status-approved"
+        : statusLabel === "Draft Ready" ? "status-draft-ready"
+        : "status-processing";
+
+    const handleCopy = () => {
+        if (notice.draft_reply) {
+            navigator.clipboard.writeText(notice.draft_reply);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
 
     return (
         <>
@@ -155,95 +141,107 @@ export default function NoticeDetailPage() {
                     <div>
                         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
                             <h1 className="page-title" style={{ fontSize: "var(--font-lg)" }}>
-                                {notice.notice_number}
+                                {notice.case_id}
                             </h1>
                             <span className={`badge ${riskClass}`}>
                                 {notice.risk_level === "HIGH" && <AlertTriangle size={11} />}
                                 {notice.risk_level}
                             </span>
+                            {notice.is_time_barred && (
+                                <span className="badge badge-low" style={{ gap: 4 }}>
+                                    <Clock size={11} />
+                                    Time-Barred
+                                </span>
+                            )}
                         </div>
-                        <p className="page-subtitle">{notice.taxpayer_name}</p>
+                        <p className="page-subtitle">{notice.notice_type || notice.filename}</p>
                     </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-                    <span
-                        className={`status ${notice.status === "Processing"
-                                ? "status-processing"
-                                : notice.status === "Draft Ready"
-                                    ? "status-draft-ready"
-                                    : "status-approved"
-                            }`}
-                    >
+                    <span className={`status ${statusClass}`}>
                         <span className="status-dot" />
-                        {notice.status}
+                        {statusLabel}
                     </span>
                 </div>
             </header>
 
             {/* Split Screen Content */}
             <div className="split-container">
-                {/* LEFT: PDF Viewer */}
+                {/* LEFT: Notice Details + Extracted Text */}
                 <div className="split-left">
                     <div className="split-panel-header">
                         <span className="split-panel-title">
                             <FileText size={14} style={{ display: "inline", marginRight: 6 }} />
-                            Original Notice
+                            Notice Analysis
                         </span>
-                        <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                            <button className="btn btn-ghost btn-icon" title="Zoom In" aria-label="Zoom in">
-                                <ZoomIn size={16} />
-                            </button>
-                            <button className="btn btn-ghost btn-icon" title="Zoom Out" aria-label="Zoom out">
-                                <ZoomOut size={16} />
-                            </button>
-                            <button className="btn btn-ghost btn-icon" title="Download" aria-label="Download PDF">
-                                <Download size={16} />
-                            </button>
-                        </div>
                     </div>
 
-                    <div className="pdf-viewer">
-                        {notice.pdf_url ? (
-                            <iframe
-                                src={notice.pdf_url}
-                                style={{ width: "100%", height: "100%", border: "none" }}
-                                title="Notice PDF"
-                            />
-                        ) : (
-                            <div className="pdf-placeholder animate-fade-in">
-                                <FileText size={48} strokeWidth={1} />
-                                <div style={{ fontSize: "var(--font-lg)", fontWeight: 600, color: "var(--text-secondary)" }}>
-                                    PDF Viewer
-                                </div>
-                                <div style={{ fontSize: "var(--font-sm)", color: "var(--text-tertiary)", textAlign: "center", maxWidth: 300, lineHeight: 1.6 }}>
-                                    The original notice PDF will appear here when available.
-                                </div>
-
-                                {/* Notice metadata summary */}
-                                <div style={{ width: "100%", maxWidth: 400, marginTop: "var(--space-6)", padding: "var(--space-4)", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-secondary)" }}>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", fontSize: "var(--font-sm)" }}>
-                                        <div>
-                                            <div style={{ color: "var(--text-tertiary)", fontSize: "var(--font-xs)" }}>Section</div>
-                                            <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>{notice.section}</div>
-                                        </div>
-                                        <div>
-                                            <div style={{ color: "var(--text-tertiary)", fontSize: "var(--font-xs)" }}>Demand</div>
-                                            <div style={{ color: "var(--text-primary)", fontWeight: 600 }}>{formatCurrency(notice.demand_amount)}</div>
-                                        </div>
-                                        <div>
-                                            <div style={{ color: "var(--text-tertiary)", fontSize: "var(--font-xs)" }}>GSTIN</div>
-                                            <div style={{ color: "var(--text-primary)", fontWeight: 500, fontFamily: "monospace", fontSize: "var(--font-xs)" }}>{notice.gstin}</div>
-                                        </div>
-                                        <div>
-                                            <div style={{ color: "var(--text-tertiary)", fontSize: "var(--font-xs)" }}>Due Date</div>
-                                            <div style={{ color: "var(--danger)", fontWeight: 600 }}>
-                                                {new Date(notice.due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                                            </div>
-                                        </div>
-                                    </div>
+                    <div className="split-panel-body" style={{ padding: "var(--space-5)" }}>
+                        {/* Key Info Grid */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginBottom: "var(--space-6)" }}>
+                            <div style={{ padding: "var(--space-4)", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-secondary)" }}>
+                                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>Section</div>
+                                <div style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text-primary)" }}>
+                                    {notice.section ? `Section ${notice.section}` : "—"}
                                 </div>
                             </div>
+                            <div style={{ padding: "var(--space-4)", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-secondary)" }}>
+                                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>Demand</div>
+                                <div style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text-primary)" }}>
+                                    {notice.demand_amount > 0 ? formatCurrency(notice.demand_amount) : "—"}
+                                </div>
+                            </div>
+                            <div style={{ padding: "var(--space-4)", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-secondary)" }}>
+                                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>GSTIN</div>
+                                <div style={{ fontSize: "var(--font-xs)", fontWeight: 500, color: "var(--text-primary)", fontFamily: "monospace" }}>
+                                    {primaryGstin}
+                                </div>
+                            </div>
+                            <div style={{ padding: "var(--space-4)", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-secondary)" }}>
+                                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>Financial Year</div>
+                                <div style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text-primary)" }}>
+                                    {notice.fy || "—"}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Risk Analysis */}
+                        {notice.risk_reasoning && (
+                            <div style={{ marginBottom: "var(--space-6)", padding: "var(--space-4)", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-secondary)" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+                                    <Shield size={14} style={{ color: "var(--warning)" }} />
+                                    <span style={{ fontSize: "var(--font-xs)", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                        Risk Analysis ({notice.risk_level} — {Math.round((notice.risk_score || 0) * 100)}%)
+                                    </span>
+                                </div>
+                                <p style={{ fontSize: "var(--font-sm)", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+                                    {notice.risk_reasoning}
+                                </p>
+                            </div>
                         )}
+
+                        {/* Extracted Notice Text */}
+                        <div>
+                            <div style={{ fontSize: "var(--font-xs)", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                                <BookOpen size={14} />
+                                Extracted Notice Text
+                            </div>
+                            <div style={{
+                                padding: "var(--space-4)",
+                                background: "var(--bg-primary)",
+                                borderRadius: "var(--radius-md)",
+                                border: "1px solid var(--border-primary)",
+                                maxHeight: 400,
+                                overflowY: "auto",
+                                fontSize: "var(--font-sm)",
+                                color: "var(--text-secondary)",
+                                lineHeight: 1.7,
+                                whiteSpace: "pre-wrap",
+                                fontFamily: "var(--font-mono, monospace)",
+                            }}>
+                                {notice.notice_text || "No text extracted."}
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -254,14 +252,15 @@ export default function NoticeDetailPage() {
                             <Edit3 size={14} style={{ display: "inline", marginRight: 6 }} />
                             AI Draft Reply
                         </span>
-                        {draft && (
+                        {notice.draft_reply && (
                             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-                                <span style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
-                                    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: draft.confidence_score >= 0.8 ? "var(--success)" : draft.confidence_score >= 0.6 ? "var(--warning)" : "var(--danger)" }} />
-                                    Confidence: {Math.round(draft.confidence_score * 100)}%
-                                </span>
-                                <button className="btn btn-ghost btn-icon" title="Copy" aria-label="Copy draft" onClick={() => navigator.clipboard.writeText(draft.body)}>
-                                    <Copy size={16} />
+                                <button
+                                    className="btn btn-ghost btn-icon"
+                                    title={copied ? "Copied!" : "Copy"}
+                                    aria-label="Copy draft"
+                                    onClick={handleCopy}
+                                >
+                                    {copied ? <CheckCircle2 size={16} style={{ color: "var(--success)" }} /> : <Copy size={16} />}
                                 </button>
                                 <button className="btn btn-ghost btn-icon" title="Print" aria-label="Print draft" onClick={() => window.print()}>
                                     <Printer size={16} />
@@ -271,46 +270,20 @@ export default function NoticeDetailPage() {
                     </div>
 
                     <div className="split-panel-body">
-                        {draft ? (
+                        {notice.draft_reply ? (
                             <div className="draft-reply animate-fade-in">
-                                {/* Subject */}
-                                <div style={{ background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", padding: "var(--space-4)", marginBottom: "var(--space-6)", border: "1px solid var(--border-secondary)" }}>
-                                    <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "var(--space-1)" }}>Subject</div>
-                                    <div style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text-primary)" }}>{draft.subject}</div>
-                                </div>
-
-                                {/* Body */}
-                                {draft.body.split("\n\n").map((paragraph, idx) => {
+                                {notice.draft_reply.split("\n\n").map((paragraph, idx) => {
+                                    // Section headings (lines in all caps or markdown bold)
                                     if (paragraph.startsWith("**") && paragraph.endsWith("**")) {
                                         return <h3 key={idx} style={{ marginTop: "var(--space-6)" }}>{paragraph.replace(/\*\*/g, "")}</h3>;
                                     }
+                                    // Bold inline text
                                     if (paragraph.includes("**")) {
                                         const parts = paragraph.split(/\*\*(.*?)\*\*/g);
                                         return <p key={idx}>{parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)}</p>;
                                     }
                                     return <p key={idx}>{paragraph}</p>;
                                 })}
-
-                                {/* Citations */}
-                                {draft.citations && draft.citations.length > 0 && (
-                                    <div style={{ marginTop: "var(--space-8)", borderTop: "1px solid var(--border-primary)", paddingTop: "var(--space-6)" }}>
-                                        <h3 style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-4)" }}>
-                                            <BookOpen size={14} />
-                                            Citations ({draft.citations.length})
-                                        </h3>
-                                        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-                                            {draft.citations.map((citation) => (
-                                                <div key={citation.id} style={{ padding: "var(--space-4)", background: activeCitation === citation.id ? "var(--info-bg)" : "var(--bg-tertiary)", border: `1px solid ${activeCitation === citation.id ? "var(--info-border)" : "var(--border-secondary)"}`, borderRadius: "var(--radius-md)", cursor: "pointer", transition: "all var(--transition-fast)" }} onClick={() => setActiveCitation(activeCitation === citation.id ? null : citation.id)}>
-                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                                        <span className="citation">{citation.section}</span>
-                                                        <span style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>{citation.source}</span>
-                                                    </div>
-                                                    <p style={{ fontSize: "var(--font-sm)", color: "var(--text-secondary)", marginTop: "var(--space-2)", lineHeight: 1.5 }}>{citation.text}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         ) : (
                             <div className="empty-state" style={{ padding: "var(--space-12) var(--space-8)" }}>
@@ -319,18 +292,20 @@ export default function NoticeDetailPage() {
                                 </div>
                                 <div className="empty-state-title">No Draft Available</div>
                                 <div className="empty-state-text">
-                                    The AI draft reply will appear here once the notice has been processed.
+                                    {notice.status === "error"
+                                        ? `Processing failed: ${notice.error_message || "Unknown error"}`
+                                        : "The AI draft reply will appear here once the notice has been processed."}
                                 </div>
                             </div>
                         )}
                     </div>
 
                     {/* Action Bar */}
-                    {draft && (
+                    {notice.draft_reply && (
                         <div className="action-bar">
                             <div className="action-bar-left">
                                 <span style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>
-                                    Generated {new Date(draft.generated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                                    Generated {notice.updated_at ? new Date(notice.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : ""}
                                 </span>
                             </div>
                             <div className="action-bar-right">

@@ -21,13 +21,18 @@ import {
 
 interface Notice {
   id: string;
-  notice_number: string;
-  date: string;
+  case_id: string;
+  filename: string;
+  notice_type: string;
+  fy: string;
   section: string;
   demand_amount: number;
-  risk_level: "LOW" | "MEDIUM" | "HIGH";
-  status: "Processing" | "Draft Ready" | "Approved";
-  taxpayer_name?: string;
+  risk_level: "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN";
+  draft_status: string;
+  status: string;
+  is_time_barred: boolean;
+  response_deadline: string;
+  created_at: string;
 }
 
 const API_BASE = "http://localhost:8000";
@@ -70,20 +75,32 @@ function RiskBadge({ level }: { level: "LOW" | "MEDIUM" | "HIGH" }) {
 
 function StatusIndicator({
   status,
+  draftStatus,
 }: {
-  status: "Processing" | "Draft Ready" | "Approved";
+  status: string;
+  draftStatus?: string;
 }) {
-  const statusClass =
-    status === "Processing"
-      ? "status-processing"
-      : status === "Draft Ready"
-        ? "status-draft-ready"
-        : "status-approved";
+  let label = "Processing";
+  let statusClass = "status-processing";
+
+  if (status === "error") {
+    label = "Error";
+    statusClass = "status-processing";
+  } else if (draftStatus === "approved") {
+    label = "Approved";
+    statusClass = "status-approved";
+  } else if (draftStatus === "draft_ready") {
+    label = "Draft Ready";
+    statusClass = "status-draft-ready";
+  } else if (status === "processed") {
+    label = "Draft Ready";
+    statusClass = "status-draft-ready";
+  }
 
   return (
     <span className={`status ${statusClass}`}>
       <span className="status-dot" />
-      {status}
+      {label}
     </span>
   );
 }
@@ -117,6 +134,7 @@ function StatCard({
 }
 
 function NoticeCard({ notice }: { notice: Notice }) {
+  const displayRisk = notice.risk_level === "UNKNOWN" ? "LOW" : notice.risk_level;
   return (
     <Link
       href={`/notice/${notice.id}`}
@@ -124,17 +142,17 @@ function NoticeCard({ notice }: { notice: Notice }) {
     >
       <div className="notice-card stagger-item">
         <div className="notice-card-header">
-          <RiskBadge level={notice.risk_level} />
-          <StatusIndicator status={notice.status} />
+          <RiskBadge level={displayRisk as "LOW" | "MEDIUM" | "HIGH"} />
+          <StatusIndicator status={notice.status} draftStatus={notice.draft_status} />
         </div>
 
         <div className="notice-card-body">
-          <div className="notice-card-number">{notice.notice_number}</div>
-          {notice.taxpayer_name && (
+          <div className="notice-card-number">{notice.case_id}</div>
+          {notice.notice_type && notice.notice_type !== "Unknown" && (
             <div
               style={{ fontSize: "var(--font-sm)", color: "var(--text-secondary)" }}
             >
-              {notice.taxpayer_name}
+              {notice.notice_type}
             </div>
           )}
         </div>
@@ -148,11 +166,11 @@ function NoticeCard({ notice }: { notice: Notice }) {
         >
           <div className="notice-card-meta">
             <Calendar />
-            {formatDate(notice.date)}
+            {notice.created_at ? formatDate(notice.created_at) : "—"}
           </div>
           <div className="notice-card-meta">
             <FileText />
-            {notice.section}
+            {notice.section ? `Section ${notice.section}` : notice.fy || "—"}
           </div>
         </div>
 
@@ -215,17 +233,17 @@ export default function DashboardPage() {
 
   const stats = {
     total: notices.length,
-    processing: notices.filter((n) => n.status === "Processing").length,
-    draftReady: notices.filter((n) => n.status === "Draft Ready").length,
-    approved: notices.filter((n) => n.status === "Approved").length,
+    processing: notices.filter((n) => n.status === "processing").length,
+    draftReady: notices.filter((n) => n.draft_status === "draft_ready" || n.status === "processed").length,
+    approved: notices.filter((n) => n.draft_status === "approved").length,
   };
 
   const filteredNotices = notices.filter((n) => {
     const matchesSearch =
       searchQuery === "" ||
-      n.notice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (n.taxpayer_name &&
-        n.taxpayer_name.toLowerCase().includes(searchQuery.toLowerCase()));
+      n.case_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (n.notice_type &&
+        n.notice_type.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesFilter = filterRisk === "ALL" || n.risk_level === filterRisk;
 

@@ -164,17 +164,26 @@ class Agent4Drafter:
             demand_amount = raw_demand
 
         # ═══ Retrieve relevant circulars ═══
-        circulars_text = "No circulars found in knowledge base."
-        try:
-            query = f"GST Section {section} {notice_type} {fy}"
-            results = searcher.search(query, top_k=3)
-            if results:
-                circulars_text = "\n\n".join([
-                    f"[{r['doc_id']}] {r['text'][:500]}"
-                    for r in results
-                ])
-        except Exception as e:
-            logger.warning(f"Circular search failed (non-fatal): {e}")
+        # Prefer Agent 3's pre-fetched results if available
+        retrieved_circulars = state_dict.get("retrieved_circulars", [])
+        if retrieved_circulars:
+            logger.info(f"Using {len(retrieved_circulars)} circulars from Agent 3")
+            circulars_text = "\n\n".join([
+                f"[{r['doc_id']}] {r['text'][:500]}"
+                for r in retrieved_circulars
+            ])
+        else:
+            circulars_text = "No circulars found in knowledge base."
+            try:
+                query = f"GST Section {section} {notice_type} {fy}"
+                results = searcher.search(query, top_k=3)
+                if results:
+                    circulars_text = "\n\n".join([
+                        f"[{r['doc_id']}] {r['text'][:500]}"
+                        for r in results
+                    ])
+            except Exception as e:
+                logger.warning(f"Circular search failed (non-fatal): {e}")
 
         # ═══ Build notice structure summary ═══
         annotations = state_dict.get("notice_annotations", [])
@@ -184,6 +193,15 @@ class Agent4Drafter:
                 f"- [{a.get('role', 'UNKNOWN')}] {a.get('summary', a.get('text_preview', ''))}"
                 for a in annotations[:10]
             ])
+
+        # ═══ Integrate Agent 3 defense analysis (if available) ═══
+        defense_strategy_text = ""
+        defense_strategy = state_dict.get("defense_strategy", "")
+        contradictions = state_dict.get("contradictions", {})
+        if defense_strategy:
+            defense_strategy_text = f"\n\nDEFENSE STRATEGY FROM LEGAL ANALYST:\n{defense_strategy}"
+        if contradictions and contradictions.get("contradictions"):
+            defense_strategy_text += f"\n\nCONTRADICTIONS FOUND IN NOTICE:\n{json.dumps(contradictions['contradictions'], indent=2)}"
 
         # ═══ Select prompt and generate ═══
         if is_time_barred:
@@ -216,6 +234,9 @@ class Agent4Drafter:
                 notice_structure=notice_structure,
                 circulars=circulars_text,
             )
+            # Append Agent 3's analysis if available
+            if defense_strategy_text:
+                prompt += defense_strategy_text
 
         try:
             draft_reply = await llm_router.generate(

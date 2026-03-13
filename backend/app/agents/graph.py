@@ -6,6 +6,7 @@ from langgraph.graph import StateGraph, END
 from app.agents.state import PipelineState
 from app.agents.agent1_processor import agent1
 from app.agents.agent2_router import agent2
+from app.agents.agent3_analyst import agent3
 from app.agents.agent4_drafter import agent4
 import logging
 
@@ -41,9 +42,10 @@ def route_after_risk(state: PipelineState) -> str:
 
 
 async def agent3_node(state: PipelineState) -> dict:
-    """Legal Analyst — placeholder."""
-    logger.info("Running Agent 3 Node (placeholder)...")
-    return {"current_agent": "agent3"}
+    """Legal Analyst: Search circulars, detect contradictions, build defense."""
+    logger.info("Running Agent 3 Node...")
+    result = await agent3.process(state)
+    return result
 
 
 async def agent4_node(state: PipelineState) -> dict:
