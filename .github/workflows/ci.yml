@@ -1,0 +1,88 @@
+# ═══════════════════════════════════════════════════════════
+# TaxShield CI/CD — GitHub Actions
+# Runs backend tests + frontend build on every push and PR
+# ═══════════════════════════════════════════════════════════
+
+name: TaxShield CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Backend: Lint + Test
+  # ─────────────────────────────────────────────
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          DATABASE_URL: "sqlite+aiosqlite:///./test.db"
+          JWT_SECRET_KEY: "ci-test-secret"
+          GEMINI_API_KEY: "test"
+          GROQ_API_KEY: "test"
+          COHERE_API_KEY: "test"
+        run: |
+          python -m pytest tests/ -v --tb=short -q
+
+  # ─────────────────────────────────────────────
+  # Frontend: Build
+  # ─────────────────────────────────────────────
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  # ─────────────────────────────────────────────
+  # All-green gate
+  # ─────────────────────────────────────────────
+  ci-complete:
+    name: CI Complete
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All checks passed
+        run: echo "✅ Backend tests and frontend build passed"

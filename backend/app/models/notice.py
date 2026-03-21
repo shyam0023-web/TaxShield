@@ -3,7 +3,7 @@ TaxShield — Notice Model
 SQLAlchemy model for notices table.
 Stores pipeline output from Agent 1 → 2 → 3 → 4.
 """
-from sqlalchemy import Column, String, Text, DateTime, Float, Boolean, JSON
+from sqlalchemy import Column, String, Text, DateTime, Float, Boolean, JSON, Index
 from app.database import Base
 import uuid
 from datetime import datetime
@@ -40,8 +40,21 @@ class Notice(Base):
     draft_reply = Column(Text)
     draft_status = Column(String, default="pending")  # pending, draft_ready, approved, rejected
     
+    # Agent 5 output (InEx Verification)
+    verification_status = Column(String)   # passed, needs_review, failed, skipped
+    verification_score = Column(Float)     # 0.0 - 1.0
+    verification_issues = Column(JSON)     # list of issue dicts
+    accuracy_report = Column(JSON)         # full InEx report
+    
     # Metadata
     status = Column(String, default="processing")  # processing, processed, error
     error_message = Column(Text)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_notices_status", "status"),
+        Index("ix_notices_risk_level", "risk_level"),
+        Index("ix_notices_draft_status", "draft_status"),
+    )
+

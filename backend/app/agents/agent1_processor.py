@@ -39,7 +39,7 @@ class Agent1Processor:
         errors = []
         
         # ═══ Step 1: OCR ═══
-        logger.info("Step 1/6: OCR extraction via Gemini Vision")
+        logger.info("Step 1/6: OCR extraction via local engine (Surya / Tesseract)")
         try:
             ocr_result = await ocr_engine.extract_from_pdf(pdf_bytes)
             raw_text = ocr_result["full_text"]

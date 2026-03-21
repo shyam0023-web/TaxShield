@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { AuthGuard } from "@/components/AuthGuard";
 import Link from "next/link";
 import {
     ArrowLeft,
@@ -18,8 +19,12 @@ import {
     Shield,
     Clock,
     TrendingUp,
+    Trash2,
+    ExternalLink,
+    ChevronDown,
+    ChevronUp,
 } from "lucide-react";
-import { type NoticeDetail, fetchNotice } from "@/lib/api";
+import { type NoticeDetail, fetchNotice, deleteNotice, approveDraft, rejectDraft, updateDraft } from "@/lib/api";
 
 function formatCurrency(amount: number): string {
     return new Intl.NumberFormat("en-IN", {
@@ -36,6 +41,11 @@ export default function NoticeDetailPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [copied, setCopied] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [editing, setEditing] = useState(false);
+    const [editText, setEditText] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [showVerification, setShowVerification] = useState(false);
 
     useEffect(() => {
         const load = async () => {
@@ -126,7 +136,67 @@ export default function NoticeDetailPage() {
         }
     };
 
+    const handleDelete = async () => {
+        const confirmed = window.confirm(
+            `Permanently delete notice "${notice.case_id}" and all associated data?\n\nThis action cannot be undone (DPDP Act — Right to Erasure).`
+        );
+        if (!confirmed) return;
+
+        setDeleting(true);
+        try {
+            await deleteNotice(notice.id);
+            router.push("/");
+        } catch {
+            setDeleting(false);
+            alert("Failed to delete notice. Please try again.");
+        }
+    };
+
+    const handleApprove = async () => {
+        setSaving(true);
+        try {
+            await approveDraft(notice.id);
+            setNotice({ ...notice, draft_status: "approved" });
+        } catch {
+            alert("Failed to approve draft.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleReject = async () => {
+        const feedback = window.prompt("Reason for rejection (optional):");
+        setSaving(true);
+        try {
+            await rejectDraft(notice.id, feedback || undefined);
+            setNotice({ ...notice, draft_status: "rejected" });
+        } catch {
+            alert("Failed to reject draft.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleEditStart = () => {
+        setEditText(notice.draft_reply || "");
+        setEditing(true);
+    };
+
+    const handleEditSave = async () => {
+        setSaving(true);
+        try {
+            const result = await updateDraft(notice.id, editText);
+            setNotice({ ...notice, draft_reply: result.draft_reply, draft_status: "draft_ready" });
+            setEditing(false);
+        } catch {
+            alert("Failed to save draft.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
+        <AuthGuard>
         <>
             {/* Page Header */}
             <header className="page-header">
@@ -162,6 +232,20 @@ export default function NoticeDetailPage() {
                         <span className="status-dot" />
                         {statusLabel}
                     </span>
+                    <button
+                        className="btn btn-ghost"
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        style={{
+                            color: "var(--danger)",
+                            fontSize: "var(--font-sm)",
+                            opacity: deleting ? 0.5 : 1,
+                        }}
+                        aria-label="Delete notice"
+                    >
+                        <Trash2 size={15} />
+                        {deleting ? "Deleting..." : "Delete"}
+                    </button>
                 </div>
             </header>
 
@@ -252,32 +336,147 @@ export default function NoticeDetailPage() {
                             <Edit3 size={14} style={{ display: "inline", marginRight: 6 }} />
                             AI Draft Reply
                         </span>
-                        {notice.draft_reply && (
-                            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-                                <button
-                                    className="btn btn-ghost btn-icon"
-                                    title={copied ? "Copied!" : "Copy"}
-                                    aria-label="Copy draft"
-                                    onClick={handleCopy}
+                        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+                            {notice.verification_status && (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 4,
+                                        padding: "2px 10px",
+                                        borderRadius: "var(--radius-full)",
+                                        fontSize: "var(--font-xs)",
+                                        fontWeight: 600,
+                                        background: notice.verification_status === "passed"
+                                            ? "rgba(34,197,94,0.15)"
+                                            : notice.verification_status === "needs_review"
+                                            ? "rgba(234,179,8,0.15)"
+                                            : "rgba(239,68,68,0.15)",
+                                        color: notice.verification_status === "passed"
+                                            ? "#22c55e"
+                                            : notice.verification_status === "needs_review"
+                                            ? "#eab308"
+                                            : "#ef4444",
+                                        cursor: "pointer",
+                                    }}
+                                    onClick={() => setShowVerification(!showVerification)}
+                                    title="Click to expand InEx verification details"
                                 >
-                                    {copied ? <CheckCircle2 size={16} style={{ color: "var(--success)" }} /> : <Copy size={16} />}
-                                </button>
-                                <button className="btn btn-ghost btn-icon" title="Print" aria-label="Print draft" onClick={() => window.print()}>
-                                    <Printer size={16} />
-                                </button>
-                            </div>
-                        )}
+                                    {notice.verification_status === "passed" ? (
+                                        <CheckCircle2 size={12} />
+                                    ) : notice.verification_status === "needs_review" ? (
+                                        <AlertTriangle size={12} />
+                                    ) : (
+                                        <XCircle size={12} />
+                                    )}
+                                    InEx {Math.round((notice.verification_score || 0) * 100)}%
+                                    {showVerification ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                </div>
+                            )}
+                            {notice.draft_reply && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+                                    <button
+                                        className="btn btn-ghost btn-icon"
+                                        title={copied ? "Copied!" : "Copy"}
+                                        aria-label="Copy draft"
+                                        onClick={handleCopy}
+                                    >
+                                        {copied ? <CheckCircle2 size={16} style={{ color: "var(--success)" }} /> : <Copy size={16} />}
+                                    </button>
+                                    <button className="btn btn-ghost btn-icon" title="Print" aria-label="Print draft" onClick={() => window.print()}>
+                                        <Printer size={16} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
+                    {/* InEx Verification Details */}
+                    {showVerification && notice.verification_issues && notice.verification_issues.length > 0 && (
+                        <div style={{
+                            padding: "var(--space-4)",
+                            background: "var(--bg-tertiary)",
+                            borderBottom: "1px solid var(--border-secondary)",
+                            maxHeight: 250,
+                            overflowY: "auto",
+                        }}>
+                            <div style={{ fontSize: "var(--font-xs)", fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "var(--space-3)" }}>
+                                Verification Issues ({notice.verification_issues.length})
+                            </div>
+                            {notice.verification_issues.map((issue, idx) => (
+                                <div key={idx} style={{
+                                    padding: "var(--space-3)",
+                                    marginBottom: "var(--space-2)",
+                                    borderRadius: "var(--radius-md)",
+                                    border: `1px solid ${
+                                        issue.severity === "critical" ? "rgba(239,68,68,0.3)"
+                                        : issue.severity === "warning" ? "rgba(234,179,8,0.3)"
+                                        : "var(--border-secondary)"
+                                    }`,
+                                    background: issue.severity === "critical" ? "rgba(239,68,68,0.05)" : "var(--bg-primary)",
+                                }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: 4 }}>
+                                        <span style={{
+                                            fontSize: 10,
+                                            fontWeight: 700,
+                                            textTransform: "uppercase",
+                                            color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#eab308" : "var(--text-tertiary)",
+                                        }}>
+                                            {issue.severity}
+                                        </span>
+                                        <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>
+                                            {issue.stage.replace("_", " ")}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: "var(--font-sm)", color: "var(--text-primary)", marginBottom: 4 }}>
+                                        {issue.issue}
+                                    </div>
+                                    {issue.suggestion && (
+                                        <div style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)", fontStyle: "italic" }}>
+                                            💡 {issue.suggestion}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     <div className="split-panel-body">
-                        {notice.draft_reply ? (
+                        {editing ? (
+                            <div style={{ padding: "var(--space-4)" }}>
+                                <textarea
+                                    value={editText}
+                                    onChange={(e) => setEditText(e.target.value)}
+                                    style={{
+                                        width: "100%",
+                                        minHeight: 400,
+                                        padding: "var(--space-4)",
+                                        fontFamily: "var(--font-mono, monospace)",
+                                        fontSize: "var(--font-sm)",
+                                        lineHeight: 1.7,
+                                        background: "var(--bg-primary)",
+                                        color: "var(--text-primary)",
+                                        border: "1px solid var(--brand-primary)",
+                                        borderRadius: "var(--radius-md)",
+                                        resize: "vertical",
+                                        outline: "none",
+                                    }}
+                                />
+                                <div style={{ display: "flex", gap: "var(--space-3)", justifyContent: "flex-end", marginTop: "var(--space-3)" }}>
+                                    <button className="btn btn-ghost" onClick={() => setEditing(false)} disabled={saving}>
+                                        Cancel
+                                    </button>
+                                    <button className="btn btn-primary" onClick={handleEditSave} disabled={saving}>
+                                        {saving ? "Saving..." : "Save Changes"}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : notice.draft_reply ? (
                             <div className="draft-reply animate-fade-in">
                                 {notice.draft_reply.split("\n\n").map((paragraph, idx) => {
-                                    // Section headings (lines in all caps or markdown bold)
                                     if (paragraph.startsWith("**") && paragraph.endsWith("**")) {
                                         return <h3 key={idx} style={{ marginTop: "var(--space-6)" }}>{paragraph.replace(/\*\*/g, "")}</h3>;
                                     }
-                                    // Bold inline text
                                     if (paragraph.includes("**")) {
                                         const parts = paragraph.split(/\*\*(.*?)\*\*/g);
                                         return <p key={idx}>{parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)}</p>;
@@ -301,31 +500,42 @@ export default function NoticeDetailPage() {
                     </div>
 
                     {/* Action Bar */}
-                    {notice.draft_reply && (
+                    {notice.draft_reply && !editing && (
                         <div className="action-bar">
                             <div className="action-bar-left">
                                 <span style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>
-                                    Generated {notice.updated_at ? new Date(notice.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : ""}
+                                    {notice.draft_status === "approved" ? "✅ Approved" : notice.draft_status === "rejected" ? "❌ Rejected" : `Generated ${notice.updated_at ? new Date(notice.updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : ""}`}
                                 </span>
                             </div>
                             <div className="action-bar-right">
-                                <button className="btn btn-danger" aria-label="Reject draft">
-                                    <XCircle size={16} />
-                                    Reject
-                                </button>
-                                <button className="btn btn-outline" aria-label="Edit draft">
-                                    <Edit3 size={16} />
-                                    Edit
-                                </button>
-                                <button className="btn btn-success" aria-label="Approve draft">
-                                    <CheckCircle2 size={16} />
-                                    Approve
-                                </button>
+                                {notice.draft_status !== "approved" && (
+                                    <>
+                                        <button className="btn btn-danger" aria-label="Reject draft" onClick={handleReject} disabled={saving}>
+                                            <XCircle size={16} />
+                                            {saving ? "..." : "Reject"}
+                                        </button>
+                                        <button className="btn btn-outline" aria-label="Edit draft" onClick={handleEditStart} disabled={saving}>
+                                            <Edit3 size={16} />
+                                            Edit
+                                        </button>
+                                        <button className="btn btn-success" aria-label="Approve draft" onClick={handleApprove} disabled={saving}>
+                                            <CheckCircle2 size={16} />
+                                            {saving ? "..." : "Approve"}
+                                        </button>
+                                    </>
+                                )}
+                                {notice.draft_status === "approved" && (
+                                    <button className="btn btn-outline" aria-label="Edit draft" onClick={handleEditStart}>
+                                        <Edit3 size={16} />
+                                        Revise
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )}
                 </div>
             </div>
         </>
+        </AuthGuard>
     );
 }

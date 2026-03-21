@@ -14,6 +14,20 @@ class Settings(BaseSettings):
     # Cohere (reranker)
     COHERE_API_KEY: str = ""
     
+    # Auth
+    JWT_SECRET_KEY: str = "taxshield-dev-secret-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_HOURS: int = 24
+    
+    # CORS
+    CORS_ORIGINS: str = "*"  # Comma-separated origins, or * for dev
+    
+    # Rate Limiting
+    RATE_LIMIT_PER_MINUTE: int = 60
+    
+    # Webhooks
+    WEBHOOK_URL: str = ""  # Set to receive event notifications
+    
     # Langfuse (observability)
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""

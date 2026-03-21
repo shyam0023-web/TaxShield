@@ -15,6 +15,9 @@ class GlobalErrorHandlerMiddleware(BaseHTTPMiddleware):
         try:
             return await call_next(request)
         except Exception as exc:
+            from fastapi import HTTPException
+            if isinstance(exc, HTTPException):
+                raise exc
             logger.exception("Global exception handler caught error")
             return JSONResponse(
                 status_code=500,

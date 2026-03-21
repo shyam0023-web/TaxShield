@@ -10,12 +10,13 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.logger import logger
+from app.config import settings
 
 # Simple in-memory rate limiter (Sliding Window)
 # Dictionary: IP -> [timestamp1, timestamp2, ...]
 RATE_LIMIT_DATA: dict[str, list[float]] = collections.defaultdict(list)
 RATE_LIMIT_WINDOW = 60  # seconds
-RATE_LIMIT_MAX_REQUESTS = 20  # requests per window
+RATE_LIMIT_MAX_REQUESTS = settings.RATE_LIMIT_PER_MINUTE
 CLEANUP_INTERVAL = 300  # cleanup stale IPs every 5 minutes
 _cleanup_task = None
 

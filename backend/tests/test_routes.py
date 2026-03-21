@@ -5,6 +5,7 @@ Mocks the LangGraph pipeline to test route logic independently.
 import sys
 import os
 import pytest
+import uuid
 from unittest.mock import patch, AsyncMock, MagicMock
 from datetime import datetime
 
@@ -31,6 +32,7 @@ async def setup_db():
     import app.models.notice
     import app.models.draft
     import app.models.case
+    import app.models.user
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -41,10 +43,37 @@ async def setup_db():
 
 @pytest.fixture
 async def client():
-    """Async test client for the FastAPI app."""
+    """Async test client for the FastAPI app (unauthenticated)."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+async def auth_client():
+    """Async test client with auth via dependency override."""
+    from app.auth.deps import get_current_user
+    from app.models.user import User
+
+    # Create a fake user object (no DB needed)
+    fake_user = User(
+        id="test-user-id-000",
+        email="test@taxshield.ai",
+        hashed_password="fake",
+        full_name="Test User",
+        role="admin",
+    )
+
+    # Override the dependency so routes skip JWT validation
+    app.dependency_overrides[get_current_user] = lambda: fake_user
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+    # Clean up
+    app.dependency_overrides.pop(get_current_user, None)
+
 
 
 # ═══════════════════════════════════════════
@@ -99,9 +128,9 @@ async def test_health_endpoint(client):
 # ═══════════════════════════════════════════
 
 @pytest.mark.anyio
-async def test_upload_rejects_non_pdf(client):
+async def test_upload_rejects_non_pdf(auth_client):
     """Should reject non-PDF files with 400"""
-    response = await client.post(
+    response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("test.txt", b"not a pdf", "text/plain")},
     )
@@ -110,9 +139,9 @@ async def test_upload_rejects_non_pdf(client):
 
 
 @pytest.mark.anyio
-async def test_upload_rejects_empty_file(client):
+async def test_upload_rejects_empty_file(auth_client):
     """Should reject empty PDF with 400"""
-    response = await client.post(
+    response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("empty.pdf", b"", "application/pdf")},
     )
@@ -122,11 +151,11 @@ async def test_upload_rejects_empty_file(client):
 
 @pytest.mark.anyio
 @patch("app.routes.notices.graph")
-async def test_upload_success(mock_graph, client):
+async def test_upload_success(mock_graph, auth_client):
     """Successful upload should return notice ID and risk level"""
     mock_graph.ainvoke = AsyncMock(return_value=MOCK_PIPELINE_RESULT)
     
-    response = await client.post(
+    response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("test_notice.pdf", b"%PDF-1.4 test content", "application/pdf")},
     )
@@ -139,19 +168,19 @@ async def test_upload_success(mock_graph, client):
 
 @pytest.mark.anyio
 @patch("app.routes.notices.graph")
-async def test_upload_saves_to_db(mock_graph, client):
+async def test_upload_saves_to_db(mock_graph, auth_client):
     """Upload should persist notice to database"""
     mock_graph.ainvoke = AsyncMock(return_value=MOCK_PIPELINE_RESULT)
     
     # Upload
-    response = await client.post(
+    response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("persist_test.pdf", b"%PDF-1.4 test", "application/pdf")},
     )
     notice_id = response.json()["id"]
     
     # Verify it's in the DB via GET
-    get_response = await client.get(f"/api/notices/{notice_id}")
+    get_response = await auth_client.get(f"/api/notices/{notice_id}")
     assert get_response.status_code == 200
     data = get_response.json()
     assert data["id"] == notice_id
@@ -161,11 +190,11 @@ async def test_upload_saves_to_db(mock_graph, client):
 
 @pytest.mark.anyio
 @patch("app.routes.notices.graph")
-async def test_upload_pipeline_failure(mock_graph, client):
+async def test_upload_pipeline_failure(mock_graph, auth_client):
     """Pipeline failure should return 500 and save error to DB"""
     mock_graph.ainvoke = AsyncMock(side_effect=Exception("LLM timeout"))
     
-    response = await client.post(
+    response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("fail_test.pdf", b"%PDF-1.4 test", "application/pdf")},
     )
@@ -178,18 +207,24 @@ async def test_upload_pipeline_failure(mock_graph, client):
 # ═══════════════════════════════════════════
 
 @pytest.mark.anyio
-async def test_list_notices(client):
-    """GET /api/notices should return a list"""
-    response = await client.get("/api/notices")
+async def test_list_notices(auth_client):
+    """GET /api/notices should return a paginated response"""
+    response = await auth_client.get("/api/notices")
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
+    assert isinstance(data, dict)
+    assert "items" in data
+    assert isinstance(data["items"], list)
+    assert "total" in data
+    assert "page" in data
+    assert "page_size" in data
+    assert "total_pages" in data
 
 
 @pytest.mark.anyio
-async def test_get_notice_not_found(client):
+async def test_get_notice_not_found(auth_client):
     """GET /api/notices/{id} for nonexistent ID should return 404"""
-    response = await client.get("/api/notices/nonexistent-id-12345")
+    response = await auth_client.get("/api/notices/nonexistent-id-12345")
     assert response.status_code == 404
 
 
@@ -212,11 +247,11 @@ async def test_notifications_endpoint(client):
 
 @pytest.mark.anyio
 @patch("app.routes.notices.graph")
-async def test_upload_response_shape(mock_graph, client):
+async def test_upload_response_shape(mock_graph, auth_client):
     """Upload response must have exactly these fields"""
     mock_graph.ainvoke = AsyncMock(return_value=MOCK_PIPELINE_RESULT)
     
-    response = await client.post(
+    response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("shape_test.pdf", b"%PDF-1.4 test", "application/pdf")},
     )
@@ -227,19 +262,19 @@ async def test_upload_response_shape(mock_graph, client):
 
 @pytest.mark.anyio
 @patch("app.routes.notices.graph")
-async def test_notice_detail_response_shape(mock_graph, client):
+async def test_notice_detail_response_shape(mock_graph, auth_client):
     """Notice detail must include all expected fields"""
     mock_graph.ainvoke = AsyncMock(return_value=MOCK_PIPELINE_RESULT)
     
     # Create a notice first
-    upload_resp = await client.post(
+    upload_resp = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("detail_shape.pdf", b"%PDF-1.4 test", "application/pdf")},
     )
     notice_id = upload_resp.json()["id"]
     
     # Get detail
-    response = await client.get(f"/api/notices/{notice_id}")
+    response = await auth_client.get(f"/api/notices/{notice_id}")
     data = response.json()
     
     required_fields = {
@@ -249,3 +284,4 @@ async def test_notice_detail_response_shape(mock_graph, client):
         "draft_reply", "draft_status", "status", "created_at",
     }
     assert required_fields.issubset(set(data.keys())), f"Missing: {required_fields - set(data.keys())}"
+

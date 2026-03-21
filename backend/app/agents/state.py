@@ -45,7 +45,13 @@ class PipelineState(TypedDict, total=False):
     citation_report: Optional[dict]
     accuracy_report: Optional[dict]
     
+    # Agent 5 output (InEx Verification)
+    verification_status: Optional[str]    # "passed", "needs_review", "failed", "skipped"
+    verification_score: Optional[float]   # 0.0 - 1.0
+    verification_issues: Optional[list]   # list of issue dicts
+    
     # Metadata
     human_review_notes: str
     escalation_history: list
     current_agent: str
+

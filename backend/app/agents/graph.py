@@ -1,6 +1,6 @@
 """
 TaxShield — LangGraph Workflow
-Pipeline: Agent1 (OCR+NER) → Agent2 (Risk Router) → Agent3 (Legal Analyst) → Agent4 (Drafter)
+Pipeline: Agent1 (OCR+NER) → Agent2 (Risk Router) → Agent3 (Legal Analyst) → Agent4 (Drafter) → Agent5 (InEx Verifier)
 """
 from langgraph.graph import StateGraph, END
 from app.agents.state import PipelineState
@@ -8,6 +8,7 @@ from app.agents.agent1_processor import agent1
 from app.agents.agent2_router import agent2
 from app.agents.agent3_analyst import agent3
 from app.agents.agent4_drafter import agent4
+from app.agents.agent5_verifier import agent5
 import logging
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,13 @@ async def agent4_node(state: PipelineState) -> dict:
     return result
 
 
+async def agent5_node(state: PipelineState) -> dict:
+    """InEx Verifier: Hallucination mitigation via introspection + cross-modal verification."""
+    logger.info("Running Agent 5 Node...")
+    result = await agent5.process(state)
+    return result
+
+
 # Build the graph
 workflow = StateGraph(PipelineState)
 
@@ -62,11 +70,14 @@ workflow.add_node("agent1", agent1_node)
 workflow.add_node("agent2", agent2_node)
 workflow.add_node("agent3", agent3_node)
 workflow.add_node("agent4", agent4_node)
+workflow.add_node("agent5", agent5_node)
 
 workflow.set_entry_point("agent1")
 workflow.add_edge("agent1", "agent2")
 workflow.add_conditional_edges("agent2", route_after_risk, {"agent3": "agent3", "agent4": "agent4"})
 workflow.add_edge("agent3", "agent4")
-workflow.add_edge("agent4", END)
+workflow.add_edge("agent4", "agent5")
+workflow.add_edge("agent5", END)
 
 graph = workflow.compile()
+

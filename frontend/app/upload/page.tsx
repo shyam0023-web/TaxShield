@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { AuthGuard } from "@/components/AuthGuard";
 import {
     Upload,
     FileText,
@@ -11,6 +12,10 @@ import {
     CloudUpload,
     File,
     ArrowLeft,
+    Shield,
+    Lock,
+    Eye,
+    Trash2,
 } from "lucide-react";
 
 type UploadStatus = "idle" | "dragging" | "uploading" | "success" | "error";
@@ -21,6 +26,8 @@ export default function UploadPage() {
     const [file, setFile] = useState<File | null>(null);
     const [status, setStatus] = useState<UploadStatus>("idle");
     const [progress, setProgress] = useState(0);
+    const [showConsent, setShowConsent] = useState(false);
+    const [consentChecked, setConsentChecked] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -73,6 +80,24 @@ export default function UploadPage() {
         return (bytes / 1048576).toFixed(1) + " MB";
     };
 
+    const handleUploadClick = () => {
+        if (!file) return;
+        // Check if user already consented in this session
+        const hasConsented = localStorage.getItem("taxshield_consent") === "true";
+        if (hasConsented) {
+            handleUpload();
+        } else {
+            setShowConsent(true);
+            setConsentChecked(false);
+        }
+    };
+
+    const handleConsentAccept = () => {
+        localStorage.setItem("taxshield_consent", "true");
+        setShowConsent(false);
+        handleUpload();
+    };
+
     const handleUpload = async () => {
         if (!file) return;
 
@@ -119,6 +144,7 @@ export default function UploadPage() {
     };
 
     return (
+        <AuthGuard>
         <>
             <header className="page-header">
                 <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)" }}>
@@ -376,7 +402,7 @@ export default function UploadPage() {
                     >
                         <button
                             className="btn btn-primary animate-fade-in"
-                            onClick={handleUpload}
+                            onClick={handleUploadClick}
                             style={{
                                 padding: "var(--space-4) var(--space-8)",
                                 fontSize: "var(--font-base)",
@@ -482,6 +508,167 @@ export default function UploadPage() {
                     </div>
                 )}
             </div>
+
+            {/* ═══ DPDP Consent Modal ═══ */}
+            {showConsent && (
+                <div
+                    style={{
+                        position: "fixed",
+                        inset: 0,
+                        zIndex: 1000,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "var(--space-4)",
+                    }}
+                >
+                    {/* Backdrop */}
+                    <div
+                        style={{
+                            position: "absolute",
+                            inset: 0,
+                            background: "rgba(0, 0, 0, 0.6)",
+                            backdropFilter: "blur(4px)",
+                        }}
+                        onClick={() => setShowConsent(false)}
+                    />
+
+                    {/* Modal */}
+                    <div
+                        className="animate-scale-in"
+                        style={{
+                            position: "relative",
+                            background: "var(--bg-primary)",
+                            borderRadius: "var(--radius-xl)",
+                            border: "1px solid var(--border-primary)",
+                            maxWidth: 520,
+                            width: "100%",
+                            padding: "var(--space-8)",
+                            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+                        }}
+                    >
+                        {/* Header */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-6)" }}>
+                            <div
+                                style={{
+                                    width: 44,
+                                    height: 44,
+                                    borderRadius: "var(--radius-lg)",
+                                    background: "var(--info-bg)",
+                                    border: "1px solid var(--info-border)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    color: "var(--info)",
+                                    flexShrink: 0,
+                                }}
+                            >
+                                <Shield size={22} />
+                            </div>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: "var(--font-lg)", color: "var(--text-primary)" }}>
+                                    Data Processing Consent
+                                </div>
+                                <div style={{ fontSize: "var(--font-sm)", color: "var(--text-tertiary)" }}>
+                                    DPDP Act, 2023 Compliance
+                                </div>
+                            </div>
+                            <button
+                                className="btn btn-ghost btn-icon"
+                                onClick={() => setShowConsent(false)}
+                                style={{ marginLeft: "auto" }}
+                                aria-label="Close"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div
+                            style={{
+                                fontSize: "var(--font-sm)",
+                                color: "var(--text-secondary)",
+                                lineHeight: 1.7,
+                                marginBottom: "var(--space-6)",
+                            }}
+                        >
+                            <p style={{ marginBottom: "var(--space-4)" }}>
+                                By uploading this notice, you consent to the following:
+                            </p>
+
+                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+                                {[
+                                    { icon: Eye, text: "Your notice will be processed by AI to extract text, identify sections, and generate a draft reply." },
+                                    { icon: Lock, text: "Personal identifiers (PAN, Aadhaar, phone) are redacted before AI processing. Business identifiers (GSTIN) are preserved." },
+                                    { icon: Shield, text: "OCR runs locally on our servers — your document images never leave our infrastructure." },
+                                    { icon: Trash2, text: "You can request deletion of your data at any time under the DPDP Act." },
+                                ].map((item, i) => (
+                                    <div key={i} style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-start" }}>
+                                        <item.icon size={16} style={{ flexShrink: 0, marginTop: 3, color: "var(--brand-primary)" }} />
+                                        <span>{item.text}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Consent Checkbox */}
+                        <label
+                            style={{
+                                display: "flex",
+                                alignItems: "flex-start",
+                                gap: "var(--space-3)",
+                                padding: "var(--space-4)",
+                                background: "var(--bg-secondary)",
+                                borderRadius: "var(--radius-md)",
+                                border: "1px solid var(--border-primary)",
+                                cursor: "pointer",
+                                marginBottom: "var(--space-6)",
+                                fontSize: "var(--font-sm)",
+                                lineHeight: 1.5,
+                            }}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={consentChecked}
+                                onChange={(e) => setConsentChecked(e.target.checked)}
+                                style={{
+                                    marginTop: 2,
+                                    width: 18,
+                                    height: 18,
+                                    flexShrink: 0,
+                                    accentColor: "var(--brand-primary)",
+                                }}
+                            />
+                            <span style={{ color: "var(--text-primary)" }}>
+                                I consent to TaxShield processing this notice using AI for the purpose of generating a draft reply. I understand my data rights under the DPDP Act, 2023.
+                            </span>
+                        </label>
+
+                        {/* Buttons */}
+                        <div style={{ display: "flex", gap: "var(--space-3)", justifyContent: "flex-end" }}>
+                            <button
+                                className="btn btn-ghost"
+                                onClick={() => setShowConsent(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                disabled={!consentChecked}
+                                onClick={handleConsentAccept}
+                                style={{
+                                    opacity: consentChecked ? 1 : 0.5,
+                                    cursor: consentChecked ? "pointer" : "not-allowed",
+                                }}
+                            >
+                                <Shield size={16} />
+                                Accept & Upload
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
+        </AuthGuard>
     );
 }

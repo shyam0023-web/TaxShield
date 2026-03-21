@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
+import { Providers } from "@/components/Providers";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrainsMono = JetBrains_Mono({
@@ -26,11 +27,14 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
         style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
       >
-        <div className="app-shell">
-          <Sidebar />
-          <main className="main-content">{children}</main>
-        </div>
+        <Providers>
+          <div className="app-shell">
+            <Sidebar />
+            <main className="main-content">{children}</main>
+          </div>
+        </Providers>
       </body>
     </html>
   );
 }
+

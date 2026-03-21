@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { AuthGuard } from "@/components/AuthGuard";
+
 import Link from "next/link";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import {
@@ -217,10 +219,12 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchNotices = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/notices`);
+        const res = await fetch(`${API_BASE}/api/notices?page_size=100`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("taxshield_token") || ""}` },
+        });
         if (res.ok) {
           const data = await res.json();
-          setNotices(Array.isArray(data) ? data : []);
+          setNotices(Array.isArray(data) ? data : (data.items || []));
         }
       } catch {
         // Backend not running — show empty state
@@ -251,6 +255,7 @@ export default function DashboardPage() {
   });
 
   return (
+    <AuthGuard>
     <>
       <header className="page-header">
         <div>
@@ -398,5 +403,6 @@ export default function DashboardPage() {
         )}
       </div>
     </>
+    </AuthGuard>
   );
 }
