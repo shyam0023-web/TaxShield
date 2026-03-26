@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routes import notices, chat, drafts, health, auth, audit, verification, analytics, mfa, diff
+from app.routes import notices, chat, drafts, health, auth, audit, verification, analytics, mfa, diff, kb_routes
 from app.middleware.error_handler import setup_error_handlers
 from app.middleware.logging import setup_logging
 from app.middleware.rate_limiter import setup_rate_limiting
@@ -14,6 +14,38 @@ from app.logger import logger
 from app.middleware.rate_limiter import _periodic_cleanup
 import asyncio
 
+SCRAPE_INTERVAL_SECONDS = 7 * 24 * 60 * 60   # 7 days
+RETENTION_INTERVAL_SECONDS = 24 * 60 * 60    # 24 hours
+
+
+async def _weekly_cbic_scrape():
+    """Background task: scrape CBIC for new circulars every 7 days."""
+    await asyncio.sleep(30)  # Wait 30s after startup before first scrape
+    while True:
+        try:
+            from app.tools.cbic_scraper import scrape_cbic_circulars
+            from app.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                new_count = await scrape_cbic_circulars(db)
+                logger.info(f"[Weekly Scraper] {new_count} new circulars staged")
+        except Exception as e:
+            logger.warning(f"[Weekly Scraper] Failed (non-fatal): {e}")
+        await asyncio.sleep(SCRAPE_INTERVAL_SECONDS)
+
+
+async def _daily_retention_cleanup():
+    """DPDP Compliance: auto-delete notices older than 90 days, runs every 24h."""
+    await asyncio.sleep(60)  # Wait 60s after startup before first run
+    while True:
+        try:
+            from app.services.retention import run_retention_cleanup
+            from app.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                result = await run_retention_cleanup(db)
+                logger.info(f"[Retention] {result}")
+        except Exception as e:
+            logger.warning(f"[Retention] Failed (non-fatal): {e}")
+        await asyncio.sleep(RETENTION_INTERVAL_SECONDS)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -24,6 +56,7 @@ async def lifespan(app: FastAPI):
     import app.models.case    # noqa: F401
     import app.models.user    # noqa: F401
     import app.models.audit_log  # noqa: F401
+    import app.models.kb_staging   # noqa: F401
 
     # Startup: create DB tables
     logger.info("Initializing database...")
@@ -32,11 +65,15 @@ async def lifespan(app: FastAPI):
 
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
+    scraper_task = asyncio.create_task(_weekly_cbic_scrape())
+    retention_task = asyncio.create_task(_daily_retention_cleanup())
 
     yield
 
     # Shutdown: cancel background tasks
     cleanup_task.cancel()
+    scraper_task.cancel()
+    retention_task.cancel()
     logger.info("Shutting down...")
 
 
@@ -71,3 +108,4 @@ app.include_router(verification.router, prefix="/api", tags=["Email Verification
 app.include_router(analytics.router, prefix="/api", tags=["Analytics"])
 app.include_router(mfa.router, prefix="/api", tags=["MFA"])
 app.include_router(diff.router, prefix="/api", tags=["Draft Diff"])
+app.include_router(kb_routes.router, prefix="/api", tags=["KB Review"])

@@ -1,44 +1,63 @@
 """
-TaxShield — Agent 5: InEx Verifier
+TaxShield — Agent 5: InEx Verifier (Strengthened)
 Hallucination Mitigation via Introspection and Cross-Modal Verification.
 
-Three stages:
-  1. Citation Grounding — verify every legal reference against retrieved docs
-  2. Self-Consistency  — re-generate key claims and flag contradictions
-  3. Adversarial Challenge — LLM plays devil's advocate to find holes
+5-stage pipeline:
+  1. Citation Grounding (Ex)    — regex verifies section/circular references
+  2. Multi-Sample Consistency (In) — SelfCheckGPT: generate alt draft, compare claims
+  3. Chain-of-Verification (In)    — CoVe: generate questions, answer from KB, compare
+  4. Self-Consistency (In)         — extract claims, detect internal contradictions
+  5. Adversarial Challenge (In)    — LLM plays devil's advocate to find holes
 
-Runs after Agent 4 (Drafter), populates accuracy_report and citation_report.
+Scoring weights: Citation=0.25, MultiSample=0.20, CoVe=0.20, Consistency=0.15, Adversarial=0.20
 """
+import asyncio
 import json
 import re
 import logging
 
 from app.llm.router import llm_router
 from app.agents.prompt_loader import load_prompt
+from app.retrieval.section_kb import section_kb
 
 logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════
-# Load prompts from markdown files (WISC: procedural memory)
+# Load prompts from markdown files
 # ═══════════════════════════════════════════
 
 CONSISTENCY_PROMPT = load_prompt("consistency_check.md")
 ADVERSARIAL_PROMPT = load_prompt("adversarial_challenge.md")
+MULTI_SAMPLE_DRAFT_PROMPT = load_prompt("multi_sample_draft.md")
+MULTI_SAMPLE_COMPARE_PROMPT = load_prompt("multi_sample_compare.md")
+COVE_QUESTIONS_PROMPT = load_prompt("cove_questions.md")
+COVE_VERIFY_PROMPT = load_prompt("cove_verify.md")
+
+# Scoring weights
+WEIGHTS = {
+    "citation_grounding": 0.25,
+    "multi_sample": 0.20,
+    "cove": 0.20,
+    "self_consistency": 0.15,
+    "adversarial": 0.20,
+}
 
 
 class Agent5Verifier:
     """
-    InEx Verification Agent.
+    InEx Verification Agent (Strengthened).
 
-    Stage 1 (Introspection): Citation grounding against retrieved documents
-    Stage 2 (Introspection): Self-consistency via claim extraction + cross-check
-    Stage 3 (Cross-Modal):   Adversarial challenge from opposing perspective
+    Stage 1 (Ex):  Citation grounding — regex against known sections + KB
+    Stage 2 (In):  Multi-sample consistency — SelfCheckGPT-style
+    Stage 3 (In):  Chain-of-Verification — generate & answer verification Qs from KB
+    Stage 4 (In):  Self-consistency — claim extraction + contradiction detection
+    Stage 5 (In):  Adversarial challenge — LLM as opposing counsel
     """
 
     async def process(self, state_dict: dict) -> dict:
-        """Run all three verification stages on the draft reply."""
-        logger.info("=== Agent 5: InEx Verifier ===")
+        """Run all 5 verification stages on the draft reply."""
+        logger.info("=== Agent 5: InEx Verifier (5-stage) ===")
 
         draft_reply = state_dict.get("draft_reply", "")
         if not draft_reply:
@@ -52,43 +71,46 @@ class Agent5Verifier:
                 "citation_report": {"status": "skipped"},
             }
 
-        issues = []
-        scores = []
+        entities = state_dict.get("entities", {})
+        raw_text = state_dict.get("raw_text", "")[:1500]
+        circulars = state_dict.get("retrieved_circulars", [])
 
-        # ═══ Stage 1: Citation Grounding ═══
+        # ═══ Stage 1: Citation Grounding (synchronous, no LLM) ═══
         logger.info("Stage 1: Citation Grounding")
-        citation_result = self._check_citations(
-            draft_reply,
-            state_dict.get("retrieved_circulars", []),
-            state_dict.get("entities", {}),
+        citation_result = self._check_citations(draft_reply, circulars, entities)
+
+        # ═══ Stages 2-5: Run in parallel (all use LLM) ═══
+        logger.info("Stages 2-5: Running in parallel (multi-sample, CoVe, consistency, adversarial)")
+
+        stage_2, stage_3, stage_4, stage_5 = await asyncio.gather(
+            self._multi_sample_consistency(draft_reply, raw_text, entities, circulars),
+            self._chain_of_verification(draft_reply, entities),
+            self._check_consistency(draft_reply),
+            self._adversarial_challenge(draft_reply, raw_text, circulars),
         )
-        issues.extend(citation_result["issues"])
-        scores.append(citation_result["score"])
 
-        # ═══ Stage 2: Self-Consistency ═══
-        logger.info("Stage 2: Self-Consistency Check")
-        consistency_result = await self._check_consistency(draft_reply)
-        issues.extend(consistency_result["issues"])
-        scores.append(consistency_result["score"])
+        # ═══ Aggregate with weighted scoring ═══
+        all_stages = {
+            "citation_grounding": citation_result,
+            "multi_sample": stage_2,
+            "cove": stage_3,
+            "self_consistency": stage_4,
+            "adversarial": stage_5,
+        }
 
-        # ═══ Stage 3: Adversarial Challenge ═══
-        logger.info("Stage 3: Adversarial Challenge")
-        adversarial_result = await self._adversarial_challenge(
-            draft_reply,
-            state_dict.get("raw_text", "")[:1500],
-            state_dict.get("retrieved_circulars", []),
-        )
-        issues.extend(adversarial_result["issues"])
-        scores.append(adversarial_result["score"])
+        issues = []
+        weighted_score = 0.0
+        for name, result in all_stages.items():
+            issues.extend(result.get("issues", []))
+            weighted_score += result.get("score", 0.5) * WEIGHTS.get(name, 0.2)
 
-        # ═══ Aggregate ═══
-        final_score = sum(scores) / len(scores) if scores else 0.0
+        final_score = min(1.0, max(0.0, weighted_score))
         critical_count = sum(1 for i in issues if i.get("severity") == "critical")
         warning_count = sum(1 for i in issues if i.get("severity") == "warning")
 
         if critical_count > 0:
             status = "failed"
-        elif warning_count > 2:
+        elif warning_count > 3 or final_score < 0.6:
             status = "needs_review"
         elif final_score >= 0.7:
             status = "passed"
@@ -108,11 +130,8 @@ class Agent5Verifier:
             "accuracy_report": {
                 "status": status,
                 "score": round(final_score, 2),
-                "stages": {
-                    "citation_grounding": citation_result,
-                    "self_consistency": consistency_result,
-                    "adversarial_challenge": adversarial_result,
-                },
+                "stages": {name: {k: v for k, v in r.items() if k != "issues"}
+                           for name, r in all_stages.items()},
                 "critical_issues": critical_count,
                 "total_issues": len(issues),
             },
@@ -120,20 +139,16 @@ class Agent5Verifier:
         }
 
     # ═══════════════════════════════════════════
-    # Stage 1: Citation Grounding
+    # Stage 1: Citation Grounding (External)
     # ═══════════════════════════════════════════
 
     def _check_citations(self, draft: str, circulars: list, entities: dict) -> dict:
         """Check that legal sections/circulars cited in the draft are grounded in source docs."""
         issues = []
 
-        # Extract section references from draft (e.g., "Section 73", "Section 16(4)")
         cited_sections = set(re.findall(r'[Ss]ection\s+(\d+(?:\(\d+\))?)', draft))
-
-        # Extract circular references from draft
         cited_circulars = set(re.findall(r'[Cc]ircular\s+(?:No\.?\s*)?(\d+/\d+)', draft))
 
-        # Check sections against entities
         known_sections = set()
         if isinstance(entities, dict):
             for sec in entities.get("SECTIONS", []):
@@ -148,30 +163,29 @@ class Agent5Verifier:
                 for sec in llm_data.get("sections_referenced", []):
                     known_sections.add(str(sec))
 
-        # Well-known CGST sections that are always valid
         standard_sections = {
             "2", "7", "9", "10", "16", "17", "29", "37", "39", "44",
             "49", "50", "54", "61", "63", "65", "66", "67", "68",
             "73", "74", "75", "107", "112", "122", "125", "129", "130",
         }
 
-        # Flag sections not in source entities AND not standard
+        # Also check against curated KB sections
+        kb_sections = set(section_kb.get_all_sections())
+
         for sec in cited_sections:
             base_sec = sec.split("(")[0]
-            if base_sec not in known_sections and base_sec not in standard_sections:
+            if base_sec not in known_sections and base_sec not in standard_sections and base_sec not in kb_sections:
                 issues.append({
                     "stage": "citation_grounding",
-                    "issue": f"Section {sec} cited but not found in notice or standard CGST sections",
+                    "issue": f"Section {sec} cited but not found in notice, standard CGST sections, or curated KB",
                     "severity": "warning",
                     "location": f"Section {sec} reference",
                     "suggestion": "Verify this section applies to the case",
                 })
 
-        # Check circulars against retrieved docs
         retrieved_ids = set()
         for circ in circulars:
-            doc_id = circ.get("doc_id", "")
-            retrieved_ids.add(doc_id)
+            retrieved_ids.add(circ.get("doc_id", ""))
 
         for circ_ref in cited_circulars:
             if not any(circ_ref in rid for rid in retrieved_ids):
@@ -183,7 +197,6 @@ class Agent5Verifier:
                     "suggestion": "Remove this citation or verify it exists",
                 })
 
-        # Check for fabricated case law (the prompt says "do NOT fabricate", but verify)
         case_law_patterns = re.findall(
             r'(?:in|per|see)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\s+v\.?\s+[A-Z][\w\s]+)', draft
         )
@@ -191,16 +204,15 @@ class Agent5Verifier:
             for case in case_law_patterns[:3]:
                 issues.append({
                     "stage": "citation_grounding",
-                    "issue": f"Potential case law citation found: '{case.strip()}' — cannot verify against knowledge base",
+                    "issue": f"Potential case law citation: '{case.strip()}' — cannot verify",
                     "severity": "critical",
                     "location": "Case law reference",
-                    "suggestion": "Remove unverifiable case law citation — only cite CGST Act sections",
+                    "suggestion": "Remove unverifiable case law — only cite CGST Act sections",
                 })
 
-        # Compute score
         total_citations = len(cited_sections) + len(cited_circulars)
         if total_citations == 0:
-            score = 0.8  # No citations to check — moderate confidence
+            score = 0.8
         else:
             critical_ratio = sum(1 for i in issues if i["severity"] == "critical") / max(total_citations, 1)
             score = max(0.0, 1.0 - critical_ratio)
@@ -215,7 +227,203 @@ class Agent5Verifier:
         }
 
     # ═══════════════════════════════════════════
-    # Stage 2: Self-Consistency Check
+    # Stage 2: Multi-Sample Consistency (SelfCheckGPT)
+    # ═══════════════════════════════════════════
+
+    async def _multi_sample_consistency(self, draft: str, notice_summary: str,
+                                         entities: dict, circulars: list) -> dict:
+        """Generate an alternative draft independently, then compare claims.
+        Claims that appear in only one draft are flagged as low-confidence."""
+        issues = []
+
+        try:
+            # Step 1: Generate alternative draft
+            circulars_text = ", ".join([c.get("doc_id", "") for c in circulars]) if circulars else "None"
+            entities_summary = json.dumps({
+                "sections": entities.get("SECTIONS", []),
+                "notice_type": entities.get("llm_extracted", {}).get("notice_type", "unknown")
+                    if isinstance(entities.get("llm_extracted"), dict) else "unknown",
+            })
+
+            alt_prompt = MULTI_SAMPLE_DRAFT_PROMPT.format(
+                notice_summary=notice_summary[:1500],
+                entities=entities_summary,
+                circulars=circulars_text,
+            )
+            alt_draft = await llm_router.generate(alt_prompt, risk_level="LOW")
+
+            # Step 2: Compare claims between original and alternative
+            compare_prompt = MULTI_SAMPLE_COMPARE_PROMPT.format(
+                draft_a=draft[:3000],
+                draft_b=alt_draft[:3000],
+            )
+            raw = await llm_router.generate(compare_prompt, risk_level="LOW", json_mode=True)
+
+            try:
+                comparisons = json.loads(raw)
+                if not isinstance(comparisons, list):
+                    comparisons = []
+            except (json.JSONDecodeError, TypeError):
+                comparisons = []
+
+            # Flag low-confidence claims
+            low_confidence = [c for c in comparisons if c.get("confidence") == "LOW"]
+            high_confidence = [c for c in comparisons if c.get("confidence") == "HIGH"]
+
+            for claim in low_confidence:
+                issues.append({
+                    "stage": "multi_sample_consistency",
+                    "issue": f"Low-confidence claim: {claim.get('claim', 'unknown')} (Section {claim.get('section', '?')})",
+                    "severity": "warning",
+                    "location": f"Section {claim.get('section', '?')}",
+                    "suggestion": claim.get("reason", "Verify this claim independently"),
+                })
+
+            total = len(comparisons)
+            if total == 0:
+                score = 0.7  # Couldn't extract claims — moderate confidence
+            else:
+                score = len(high_confidence) / total
+
+            logger.info(f"Multi-sample: {len(high_confidence)} HIGH, {len(low_confidence)} LOW out of {total} claims")
+
+            return {
+                "score": round(score, 2),
+                "high_confidence_claims": len(high_confidence),
+                "low_confidence_claims": len(low_confidence),
+                "total_claims_compared": total,
+                "issues": issues,
+            }
+
+        except Exception as e:
+            logger.warning(f"Multi-sample consistency failed (non-fatal): {e}")
+            return {
+                "score": 0.5,
+                "high_confidence_claims": 0,
+                "low_confidence_claims": 0,
+                "total_claims_compared": 0,
+                "issues": [{
+                    "stage": "multi_sample_consistency",
+                    "issue": f"Multi-sample check could not be completed: {str(e)}",
+                    "severity": "info",
+                    "location": "N/A",
+                    "suggestion": "Manual review recommended",
+                }],
+            }
+
+    # ═══════════════════════════════════════════
+    # Stage 3: Chain-of-Verification (CoVe)
+    # ═══════════════════════════════════════════
+
+    async def _chain_of_verification(self, draft: str, entities: dict) -> dict:
+        """CoVe: generate verification questions → answer from KB → compare to draft.
+        Uses curated KB as ground truth, NOT the LLM's parametric memory."""
+        issues = []
+
+        try:
+            # Step 1: Generate verification questions
+            q_prompt = COVE_QUESTIONS_PROMPT.format(draft_text=draft[:4000])
+            raw_questions = await llm_router.generate(q_prompt, risk_level="LOW", json_mode=True)
+
+            try:
+                questions = json.loads(raw_questions)
+                if not isinstance(questions, list):
+                    questions = []
+            except (json.JSONDecodeError, TypeError):
+                questions = []
+
+            if not questions:
+                return {"score": 0.7, "questions_generated": 0, "verified": 0,
+                        "refuted": 0, "unverifiable": 0, "issues": []}
+
+            # Step 2: Gather relevant KB content for answering the questions
+            sections = entities.get("SECTIONS", [])
+            kb_results = section_kb.search_by_sections(sections) if sections else []
+
+            # Also do a broad query search if we have few KB results
+            if len(kb_results) < 2:
+                kb_results.extend(section_kb.search_by_query("limitation period demand notice"))
+
+            # Compile KB text for the verifier
+            kb_content = "\n\n---\n\n".join([
+                f"### {r.get('title', r.get('doc_id', 'Unknown'))}\n{r.get('full_text', r.get('text', ''))[:1000]}"
+                for r in kb_results[:5]
+            ])
+
+            if not kb_content.strip():
+                kb_content = "No curated KB content available for these sections."
+
+            # Step 3: Answer questions from KB and compare to draft
+            v_prompt = COVE_VERIFY_PROMPT.format(
+                kb_content=kb_content[:6000],
+                questions_json=json.dumps(questions[:6]),
+            )
+            raw_verdicts = await llm_router.generate(v_prompt, risk_level="LOW", json_mode=True)
+
+            try:
+                verdicts = json.loads(raw_verdicts)
+                if not isinstance(verdicts, list):
+                    verdicts = []
+            except (json.JSONDecodeError, TypeError):
+                verdicts = []
+
+            # Score based on verdicts
+            verified = sum(1 for v in verdicts if v.get("verdict") == "VERIFIED")
+            refuted = sum(1 for v in verdicts if v.get("verdict") == "REFUTED")
+            unverifiable = sum(1 for v in verdicts if v.get("verdict") == "UNVERIFIABLE")
+
+            for v in verdicts:
+                if v.get("verdict") == "REFUTED":
+                    issues.append({
+                        "stage": "chain_of_verification",
+                        "issue": f"CoVe REFUTED: {v.get('question', 'unknown')}",
+                        "severity": "critical",
+                        "location": v.get("draft_claim", "N/A"),
+                        "suggestion": v.get("explanation", "Verify against CGST Act"),
+                    })
+                elif v.get("verdict") == "UNVERIFIABLE":
+                    issues.append({
+                        "stage": "chain_of_verification",
+                        "issue": f"CoVe UNVERIFIABLE: {v.get('question', 'unknown')}",
+                        "severity": "info",
+                        "location": v.get("draft_claim", "N/A"),
+                        "suggestion": "Claim could not be verified against curated KB",
+                    })
+
+            total = len(verdicts)
+            if total == 0:
+                score = 0.7
+            else:
+                score = (verified + unverifiable * 0.5) / total
+
+            logger.info(f"CoVe: {verified} verified, {refuted} refuted, {unverifiable} unverifiable")
+
+            return {
+                "score": round(score, 2),
+                "questions_generated": len(questions),
+                "verified": verified,
+                "refuted": refuted,
+                "unverifiable": unverifiable,
+                "issues": issues,
+            }
+
+        except Exception as e:
+            logger.warning(f"Chain-of-verification failed (non-fatal): {e}")
+            return {
+                "score": 0.5,
+                "questions_generated": 0,
+                "verified": 0, "refuted": 0, "unverifiable": 0,
+                "issues": [{
+                    "stage": "chain_of_verification",
+                    "issue": f"CoVe check could not be completed: {str(e)}",
+                    "severity": "info",
+                    "location": "N/A",
+                    "suggestion": "Manual review recommended",
+                }],
+            }
+
+    # ═══════════════════════════════════════════
+    # Stage 4: Self-Consistency Check
     # ═══════════════════════════════════════════
 
     async def _check_consistency(self, draft: str) -> dict:
@@ -226,7 +434,6 @@ class Agent5Verifier:
             prompt = CONSISTENCY_PROMPT.format(draft_text=draft[:4000])
             raw = await llm_router.generate(prompt, risk_level="LOW", json_mode=True)
 
-            # Parse claims
             try:
                 claims = json.loads(raw)
                 if not isinstance(claims, list):
@@ -234,7 +441,6 @@ class Agent5Verifier:
             except (json.JSONDecodeError, TypeError):
                 claims = []
 
-            # Check for contradictions: same section cited for opposite conclusions
             section_claims = {}
             for claim in claims:
                 sec = claim.get("section_cited", "")
@@ -243,12 +449,13 @@ class Agent5Verifier:
 
             for sec, claim_list in section_claims.items():
                 if len(claim_list) > 1:
-                    # Check if claims seem contradictory (simple heuristic)
                     combined = " ".join(claim_list).lower()
                     contradiction_pairs = [
                         ("applicable", "not applicable"),
                         ("liable", "not liable"),
                         ("time-barred", "within limitation"),
+                        ("valid", "invalid"),
+                        ("mandatory", "optional"),
                     ]
                     for pos, neg in contradiction_pairs:
                         if pos in combined and neg in combined:
@@ -285,7 +492,7 @@ class Agent5Verifier:
             }
 
     # ═══════════════════════════════════════════
-    # Stage 3: Adversarial Challenge
+    # Stage 5: Adversarial Challenge
     # ═══════════════════════════════════════════
 
     async def _adversarial_challenge(self, draft: str, notice_summary: str, circulars: list) -> dict:
@@ -310,7 +517,6 @@ class Agent5Verifier:
             except (json.JSONDecodeError, TypeError):
                 adv_issues = []
 
-            # Convert to our format
             for item in adv_issues:
                 issues.append({
                     "stage": "adversarial_challenge",

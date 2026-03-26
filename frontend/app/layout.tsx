@@ -11,7 +11,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TaxShield AI | GST Notice Response System",
+  title: "TaxShield | GST Notice Response System",
   description:
     "AI-powered automated GST notice response system using RAG and multi-agent orchestration",
 };

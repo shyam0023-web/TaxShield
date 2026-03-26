@@ -101,7 +101,7 @@ export default function LoginPage() {
                         color: "var(--text-primary)",
                         margin: 0,
                     }}>
-                        TaxShield AI
+                        TaxShield
                     </h1>
                     <p style={{
                         fontSize: "var(--font-sm)",

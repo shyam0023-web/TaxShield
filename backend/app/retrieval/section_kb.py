@@ -71,8 +71,13 @@ class SectionKB:
                 self._all_entries.append(entry)
 
                 # Index by section number(s)
-                for sec in self._extract_sections(filename, content):
-                    self._entries[sec] = entry
+                # Primary section (from filename) always takes priority
+                primary_secs, secondary_secs = self._extract_sections(filename, content)
+                for sec in primary_secs:
+                    self._entries[sec] = entry  # Always set primary
+                for sec in secondary_secs:
+                    if sec not in self._entries:  # Only set if no primary owner
+                        self._entries[sec] = entry
 
                 count += 1
             except Exception as e:
@@ -117,26 +122,29 @@ class SectionKB:
         match = re.search(pattern, content, re.DOTALL)
         return match.group(1).strip() if match else ""
 
-    def _extract_sections(self, filename: str, content: str) -> List[str]:
-        """Extract all section numbers this KB file covers."""
-        sections = []
+    def _extract_sections(self, filename: str, content: str) -> tuple:
+        """Extract section numbers this KB file covers.
+        Returns (primary_sections, secondary_sections).
+        Primary = from filename (owns the key). Secondary = from content references (fills gaps only)."""
+        primary = []
+        secondary = []
 
-        # From filename: section_73.md → "73"
+        # From filename: section_73.md → "73" (PRIMARY)
         sec_match = re.search(r"section_(\d+)", filename)
         if sec_match:
-            sections.append(sec_match.group(1))
+            primary.append(sec_match.group(1))
 
-        # From content: references to "Section XX"
+        # From content: references to "Section XX" (SECONDARY — don't override)
         for match in re.finditer(r"Section\s+(\d+)", content):
             sec = match.group(1)
-            if sec not in sections:
-                sections.append(sec)
+            if sec not in primary and sec not in secondary:
+                secondary.append(sec)
 
-        # Special: DIN circular
+        # Special: DIN circular (PRIMARY)
         if "din" in filename.lower():
-            sections.extend(["din", "128", "DIN"])
+            primary.extend(["din", "128", "DIN"])
 
-        return sections
+        return primary, secondary
 
     def _extract_keywords(self, content: str) -> List[str]:
         """Extract meaningful keywords from content for fuzzy matching."""
@@ -163,10 +171,13 @@ class SectionKB:
         if not self._loaded:
             self.load()
 
-        # Normalize: "Section 73" → "73", "73(5)" → "73"
-        sec_clean = re.sub(r"[^0-9]", "", str(section).split("(")[0])
-
-        entry = self._entries.get(sec_clean)
+        # Try raw key first (for non-numeric like "din", "DIN")
+        entry = self._entries.get(section)
+        if not entry:
+            # Normalize: "Section 73" → "73", "73(5)" → "73"
+            sec_clean = re.sub(r"[^0-9]", "", str(section).split("(")[0])
+            if sec_clean:
+                entry = self._entries.get(sec_clean)
         if not entry:
             return []
 
@@ -241,6 +252,16 @@ class SectionKB:
         if not self._loaded:
             self.load()
         return sorted(self._entries.keys(), key=lambda x: (not x.isdigit(), x))
+
+    def reload(self):
+        """Hot-reload: clear indexes and re-read all markdown files from disk.
+        Called after a new circular is approved and its markdown file is written."""
+        logger.info("Reloading curated KB from disk...")
+        self._entries.clear()
+        self._all_entries.clear()
+        self._loaded = False
+        self.load()
+        logger.info(f"KB reload complete: {len(self._all_entries)} entries, {len(self._entries)} sections")
 
 
 # Singleton — lazy-loads on first search call

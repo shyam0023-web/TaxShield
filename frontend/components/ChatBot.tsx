@@ -15,7 +15,7 @@ export default function ChatBot() {
     const [messages, setMessages] = useState<Message[]>([
         {
             role: "assistant",
-            content: "👋 Welcome to **TaxShield AI**! I'm your GST legal assistant.\n\nYou can:\n• Upload a GST notice PDF for analysis\n• Ask me any GST-related questions\n\nHow can I help you today?",
+            content: "👋 Welcome to **TaxShield**! I'm your GST legal assistant.\n\nYou can:\n• Upload a GST notice PDF for analysis\n• Ask me any GST-related questions\n\nHow can I help you today?",
             type: "text",
         },
     ]);
@@ -127,7 +127,7 @@ export default function ChatBot() {
                         </svg>
                     </div>
                     <div>
-                        <h1 className="text-lg font-semibold text-white">TaxShield AI</h1>
+                        <h1 className="text-lg font-semibold text-white">TaxShield</h1>
                         <p className="text-xs text-gray-400">GST Legal Assistant</p>
                     </div>
                 </div>

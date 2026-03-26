@@ -1,0 +1,28 @@
+{
+    "notice_id": "TEST-NOTICE-001",
+    "notice_type": "Show Cause Notice",
+    "section": "73",
+    "raw_text": "OFFICE OF THE ASSISTANT COMMISSIONER OF CGST AND CENTRAL EXCISE\nDIVISION-III, RANGE-2, PUNE\n\nF.No. CGST/DIV-III/R-2/SCN/2024-25/1234\nDate: 15.01.2025\n\nTo,\nM/s ABC Trading Company\nGSTIN: 27AABCA1234F1ZP\nPlot No. 42, Industrial Estate,\nHadapsar, Pune - 411028\n\nSUBJECT: Show Cause Notice under Section 73 of the CGST Act, 2017 for recovery of tax not paid/short paid for the Financial Year 2019-20.\n\nSir/Madam,\n\nWhereas, during scrutiny of the returns filed by you for the Financial Year 2019-20, it has been observed that there are discrepancies between the GSTR-3B returns filed and the auto-populated GSTR-2A data, resulting in excess Input Tax Credit (ITC) claimed by you.\n\nThe details of discrepancies observed are as follows:\n\n1. ITC as per GSTR-3B filed: Rs. 23,45,678/-\n2. ITC as per GSTR-2A: Rs. 18,92,345/-\n3. Excess ITC claimed: Rs. 4,53,333/-\n\nFurther, it has been observed that you have not reversed the excess ITC as mandated under Rule 36(4) of the CGST Rules, 2017.\n\nTherefore, I propose to issue a demand for recovery of the following amounts:\n\na) CGST: Rs. 2,26,667/- (being 50% of excess ITC of Rs. 4,53,333/-)\nb) SGST: Rs. 2,26,666/-\nc) Interest u/s 50: Rs. 45,333/-\nd) Penalty u/s 122: Rs. 22,667/-\n\nTotal Demand: Rs. 5,21,333/-\n\nYou are hereby directed to show cause within 30 days from the date of receipt of this notice as to why the above said amount should not be demanded and recovered from you under Section 73 of the CGST Act, 2017 read with Section 11 of the SGST Act.\n\nYou are also informed that you have the right to a personal hearing. If you wish to avail the same, please inform this office within 15 days.\n\nNote: This notice has been issued without DIN number due to system constraints.\n\nSd/-\n(K.R. Sharma)\nAssistant Commissioner\nCGST & Central Excise\nDivision-III, Pune",
+
+    "expected_entities": {
+        "GSTIN": ["27AABCA1234F1ZP"],
+        "SECTIONS": ["73", "50", "122"],
+        "AMOUNTS": ["23,45,678", "18,92,345", "4,53,333", "2,26,667", "2,26,666", "45,333", "22,667", "5,21,333"],
+        "DATES": ["15.01.2025"],
+        "FINANCIAL_YEAR": "2019-20",
+        "OFFICER": "K.R. Sharma",
+        "DESIGNATION": "Assistant Commissioner"
+    },
+
+    "expected_defenses": [
+        "time_bar_check_section_73",
+        "din_missing_procedural_defect",
+        "itc_mismatch_gstr2a_vs_3b",
+        "personal_hearing_right",
+        "section_75_procedural_requirements"
+    ],
+
+    "expected_risk_level": "MEDIUM",
+
+    "notes": "This synthetic notice is designed to trigger: (1) Section 73 time-bar check for FY 2019-20, (2) DIN circular violation (no DIN number), (3) ITC mismatch defense, (4) Section 122 penalty challenge. Notice issued 15-Jan-2025 for FY 2019-20 → due date 31-Mar-2020 + COVID ext → check if within 3 years."
+}
