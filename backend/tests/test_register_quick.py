@@ -1,58 +1,38 @@
-"""Isolate the 500: test each step of registration independently."""
+"""Test scraper via backend API — register fresh account then scrape."""
+import httpx
 import asyncio
-import sys, os
-sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 async def test():
-    print("1. Testing password hashing...")
-    try:
-        from app.auth.deps import hash_password, verify_password
-        h = hash_password("test123456")
-        assert verify_password("test123456", h)
-        print("   OK: password hashing works")
-    except Exception as e:
-        print(f"   FAIL: {e}")
-        return
-
-    print("2. Testing database connection...")
-    try:
-        from app.database import AsyncSessionLocal, init_db, engine
-        async with engine.begin() as conn:
-            from app.database import Base
-            await conn.run_sync(Base.metadata.create_all)
-        print("   OK: tables created")
-    except Exception as e:
-        print(f"   FAIL: {e}")
-        return
-
-    print("3. Testing User model insert...")
-    try:
-        from app.models.user import User
-        from app.auth.deps import hash_password
-        import secrets
-        from datetime import datetime, timedelta
-
-        async with AsyncSessionLocal() as db:
-            user = User(
-                email="diag_test@test.com",
-                hashed_password=hash_password("test123456"),
-                full_name="Diag Test",
-                created_at=datetime.utcnow(),
-            )
-            user.email_verification_token = secrets.token_urlsafe(32)
-            user.email_token_expires = datetime.utcnow() + timedelta(hours=24)
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-            print(f"   OK: user created with id={user.id}")
-
-            # Cleanup
-            await db.delete(user)
-            await db.commit()
-            print("   OK: user deleted")
-    except Exception as e:
-        print(f"   FAIL: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
+    async with httpx.AsyncClient(timeout=60) as c:
+        # Register fresh test account
+        reg = await c.post("http://localhost:8000/api/auth/register", json={
+            "email": "scrapetest@test.com", "password": "scrapetest123", "full_name": "Scrape Test"
+        })
+        print(f"Register: {reg.status_code}")
+        if reg.status_code == 409:
+            # Already exists, try login
+            reg = await c.post("http://localhost:8000/api/auth/login", json={
+                "email": "scrapetest@test.com", "password": "scrapetest123"
+            })
+            print(f"Login: {reg.status_code}")
+        
+        if reg.status_code != 200:
+            print(f"Auth failed: {reg.text}")
+            return
+        
+        token = reg.json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # Trigger scrape
+        print("\nTriggering CBIC scrape...")
+        r = await c.post("http://localhost:8000/api/kb/scrape", headers=headers)
+        print(f"Scrape status: {r.status_code}")
+        print(f"Scrape result: {r.text}")
+        
+        # List pending
+        print("\nListing pending circulars...")
+        p = await c.get("http://localhost:8000/api/kb/pending", headers=headers)
+        print(f"Pending status: {p.status_code}")
+        print(f"Pending result: {p.text[:500]}")
 
 asyncio.run(test())
