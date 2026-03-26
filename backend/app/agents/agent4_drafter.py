@@ -11,98 +11,17 @@ import logging
 
 from app.llm.router import llm_router
 from app.retrieval.hybrid import searcher
+from app.agents.prompt_loader import load_prompt
 
 logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════
-# Prompt Templates
+# Load prompts from markdown files (WISC: procedural memory)
 # ═══════════════════════════════════════════
 
-TIME_BAR_PROMPT = """You are a GST tax consultant drafting a reply to a time-barred notice.
-
-NOTICE DETAILS:
-- Notice Text (first 2000 chars): {notice_text}
-- Financial Year: {fy}
-- Section: {section}
-- Notice Type: {notice_type}
-- Demand Amount: ₹{demand_amount}
-- Time-Bar Detail: {time_bar_detail}
-
-ENTITIES EXTRACTED:
-- GSTINs: {gstins}
-- Sections Referenced: {sections}
-- Notice Date: {notice_date}
-
-INSTRUCTIONS:
-Draft a professional reply that:
-1. Opens with a respectful salutation and notice reference
-2. States that the notice is time-barred under the applicable limitation period
-3. Cites the specific section (73 = 3 years, 74 = 5 years) and the exact date calculation
-4. References any CBIC extensions for COVID period if applicable
-5. Requests withdrawal/dropping of proceedings
-6. Includes a "Without Prejudice" section briefly addressing merits (in case time-bar argument fails)
-7. Closes with a prayer for relief
-
-FORMAT:
-- Use formal legal language appropriate for a GST tribunal
-- Include proper headings (Subject, Reference, Body, Prayer)
-- Keep it professional but assertive
-- Cite relevant sections of the CGST Act
-- Do NOT fabricate case law citations — only cite sections of the Act
-
-Output the complete draft reply text. Do not wrap in JSON.
-"""
-
-MERIT_PROMPT = """You are a GST tax consultant drafting a substantive reply to a GST notice.
-
-NOTICE DETAILS:
-- Notice Text (first 3000 chars): {notice_text}
-- Financial Year: {fy}
-- Section: {section}
-- Notice Type: {notice_type}
-- Demand Amount: ₹{demand_amount}
-- Risk Level: {risk_level}
-- Risk Reasoning: {risk_reasoning}
-
-ENTITIES:
-- GSTINs: {gstins}
-- Sections Referenced: {sections}
-- Notice Date: {notice_date}
-- Response Deadline: {response_deadline}
-
-NOTICE STRUCTURE:
-{notice_structure}
-
-RELEVANT CIRCULARS (from knowledge base):
-{circulars}
-
-INSTRUCTIONS:
-Draft a professional reply that:
-1. Opens with respectful salutation, notice reference number, and date
-2. Acknowledges receipt of the notice
-3. Addresses EACH allegation/demand point raised in the notice, paragraph by paragraph
-4. For ITC mismatch: explain possible reasons (timing differences, GSTR-2A/2B reconciliation, supplier default)
-5. For demand: challenge the computation if applicable, request detailed working
-6. Cite relevant CGST Act sections and circulars from the knowledge base
-7. Request personal hearing opportunity under Section 75(4)
-8. Include a "Without Prejudice" submission section
-9. Close with a prayer for relief (drop proceedings / reduce demand / waive penalty)
-
-RISK-ADJUSTED APPROACH:
-- LOW risk: Concise, factual response with standard defenses
-- MEDIUM risk: Detailed response addressing each point, request for documents
-- HIGH risk: Comprehensive response with multiple defense arguments, request for adjournment if needed
-
-FORMAT:
-- Formal legal language appropriate for GST proceedings
-- Proper headings (Subject, Reference, Preliminary Submissions, On Merits, Prayer)
-- Professional but assertive tone
-- Do NOT fabricate case law citations — only cite CGST Act sections and circulars provided
-- Include annexure list if supporting documents would strengthen the case
-
-Output the complete draft reply text. Do not wrap in JSON.
-"""
+TIME_BAR_PROMPT = load_prompt("draft_time_barred.md")
+MERIT_PROMPT = load_prompt("draft_merit.md")
 
 
 class Agent4Drafter:

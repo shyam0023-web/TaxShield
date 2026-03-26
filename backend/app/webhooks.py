@@ -11,6 +11,9 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Issue 15A: Module-level client for connection reuse (TCP + TLS pooling)
+_webhook_client = httpx.AsyncClient(timeout=10.0)
+
 # Webhooks are configured via env: WEBHOOK_URL
 # If not set, webhooks are silently disabled.
 
@@ -36,17 +39,21 @@ async def fire_webhook(event: str, payload: dict) -> bool:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(webhook_url, json=webhook_data)
-            if response.status_code < 300:
-                logger.info(f"Webhook sent: {event} → {webhook_url} (status={response.status_code})")
-                return True
-            else:
-                logger.warning(f"Webhook failed: {event} → {webhook_url} (status={response.status_code})")
-                return False
+        response = await _webhook_client.post(webhook_url, json=webhook_data)
+        if response.status_code < 300:
+            logger.info(f"Webhook sent: {event} → {webhook_url} (status={response.status_code})")
+            return True
+        else:
+            logger.warning(f"Webhook failed: {event} → {webhook_url} (status={response.status_code})")
+            return False
     except Exception as e:
         logger.error(f"Webhook error: {event} → {e}")
         return False
+
+
+async def close_webhook_client():
+    """Call on app shutdown to cleanly close the HTTP client."""
+    await _webhook_client.aclose()
 
 
 def fire_webhook_background(event: str, payload: dict) -> None:
@@ -71,3 +78,4 @@ EVENTS = {
     "draft.rejected": "A draft reply was rejected",
     "notice.deleted": "A notice was deleted (DPDP erasure)",
 }
+

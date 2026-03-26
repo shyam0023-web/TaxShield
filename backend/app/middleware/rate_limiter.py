@@ -22,9 +22,17 @@ _cleanup_task = None
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
+    # Issue 16A: Safety valve — cap unique IPs to prevent OOM under DDoS
+    MAX_TRACKED_IPS = 10_000
+
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         client_ip = request.client.host
         current_time = time.time()
+
+        # Safety valve: if too many unique IPs, clear everything
+        if len(RATE_LIMIT_DATA) > self.MAX_TRACKED_IPS:
+            logger.warning(f"Rate limiter safety valve: {len(RATE_LIMIT_DATA)} IPs tracked, clearing dict")
+            RATE_LIMIT_DATA.clear()
         
         # Remove old timestamps for this IP
         RATE_LIMIT_DATA[client_ip] = [

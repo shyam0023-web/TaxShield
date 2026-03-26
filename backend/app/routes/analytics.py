@@ -2,6 +2,7 @@
 TaxShield — Analytics Endpoint
 Dashboard analytics: risk distribution, processing stats, approval rates.
 """
+import asyncio
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,52 +23,44 @@ async def get_analytics(
 ):
     """Dashboard analytics — risk distribution, processing stats, approval rates."""
 
-    # Total notices
-    total = (await db.execute(select(func.count(Notice.id)))).scalar() or 0
+    # Issue 13A: Run all independent queries concurrently
+    (
+        total_result,
+        risk_rows,
+        status_rows,
+        draft_rows,
+        time_barred_result,
+        avg_score_result,
+        avg_demand_result,
+        type_rows,
+        audit_count_result,
+    ) = await asyncio.gather(
+        db.execute(select(func.count(Notice.id))),
+        db.execute(select(Notice.risk_level, func.count(Notice.id)).group_by(Notice.risk_level)),
+        db.execute(select(Notice.status, func.count(Notice.id)).group_by(Notice.status)),
+        db.execute(select(Notice.draft_status, func.count(Notice.id)).group_by(Notice.draft_status)),
+        db.execute(select(func.count(Notice.id)).where(Notice.is_time_barred == True)),
+        db.execute(select(func.avg(Notice.verification_score)).where(Notice.verification_score.isnot(None))),
+        db.execute(select(func.avg(Notice.demand_amount)).where(Notice.demand_amount > 0)),
+        db.execute(select(Notice.notice_type, func.count(Notice.id)).group_by(Notice.notice_type)),
+        db.execute(select(func.count(AuditLog.id))),
+    )
 
-    # Risk distribution
-    risk_query = select(Notice.risk_level, func.count(Notice.id)).group_by(Notice.risk_level)
-    risk_rows = (await db.execute(risk_query)).all()
-    risk_distribution = {(row[0] or "UNKNOWN"): row[1] for row in risk_rows}
-
-    # Status distribution
-    status_query = select(Notice.status, func.count(Notice.id)).group_by(Notice.status)
-    status_rows = (await db.execute(status_query)).all()
-    status_distribution = {(row[0] or "unknown"): row[1] for row in status_rows}
-
-    # Draft status distribution
-    draft_query = select(Notice.draft_status, func.count(Notice.id)).group_by(Notice.draft_status)
-    draft_rows = (await db.execute(draft_query)).all()
-    draft_distribution = {(row[0] or "pending"): row[1] for row in draft_rows}
+    total = total_result.scalar() or 0
+    risk_distribution = {(row[0] or "UNKNOWN"): row[1] for row in risk_rows.all()}
+    status_distribution = {(row[0] or "unknown"): row[1] for row in status_rows.all()}
+    draft_distribution = {(row[0] or "pending"): row[1] for row in draft_rows.all()}
+    time_barred = time_barred_result.scalar() or 0
+    avg_score = avg_score_result.scalar()
+    avg_demand = avg_demand_result.scalar()
+    type_distribution = {(row[0] or "Unknown"): row[1] for row in type_rows.all()}
+    audit_count = audit_count_result.scalar() or 0
 
     # Approval rate
     approved = draft_distribution.get("approved", 0)
     rejected = draft_distribution.get("rejected", 0)
     review_total = approved + rejected
     approval_rate = round((approved / review_total * 100), 1) if review_total > 0 else 0
-
-    # Time-barred count
-    time_barred = (await db.execute(
-        select(func.count(Notice.id)).where(Notice.is_time_barred == True)
-    )).scalar() or 0
-
-    # Average verification score
-    avg_score = (await db.execute(
-        select(func.avg(Notice.verification_score)).where(Notice.verification_score.isnot(None))
-    )).scalar()
-
-    # Average demand amount
-    avg_demand = (await db.execute(
-        select(func.avg(Notice.demand_amount)).where(Notice.demand_amount > 0)
-    )).scalar()
-
-    # Notice type distribution
-    type_query = select(Notice.notice_type, func.count(Notice.id)).group_by(Notice.notice_type)
-    type_rows = (await db.execute(type_query)).all()
-    type_distribution = {(row[0] or "Unknown"): row[1] for row in type_rows}
-
-    # Audit activity (last 30 days)
-    audit_count = (await db.execute(select(func.count(AuditLog.id)))).scalar() or 0
 
     return {
         "total_notices": total,
@@ -81,3 +74,4 @@ async def get_analytics(
         "type_distribution": type_distribution,
         "total_audit_events": audit_count,
     }
+

@@ -2,6 +2,7 @@
 TaxShield — Notices Routes
 Full CRUD for notices with SQLite persistence.
 """
+import asyncio
 import json
 from datetime import datetime
 from typing import Optional
@@ -11,7 +12,7 @@ from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.graph import graph
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
 from app.logger import logger
 from app.models.notice import Notice
 from app.models.user import User
@@ -35,7 +36,7 @@ async def upload_notice(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload PDF → Run 4-agent pipeline → Save to DB"""
+    """Upload PDF → Return 202 → Process pipeline in background."""
 
     # Validate file extension
     filename = (file.filename or "").lower()
@@ -49,15 +50,10 @@ async def upload_notice(
             detail=f"Invalid file type: {file.content_type}. Only PDF is accepted",
         )
 
-    # Read with size limit
-    content = b""
-    while True:
-        chunk = await file.read(1024 * 1024)
-        if not chunk:
-            break
-        content += chunk
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=413, detail="File too large. Maximum size is 25 MB")
+    # Issue 14A: Read file in one shot — avoid O(n²) byte concatenation
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 25 MB")
 
     if not content:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
@@ -78,84 +74,157 @@ async def upload_notice(
     await db.refresh(notice)
     notice_id = notice.id
 
-    # Run the agent pipeline
-    initial_state = {
-        "pdf_bytes": content,
-        "case_id": case_id,
-        "current_agent": "start",
-    }
-
-    try:
-        final_state = await graph.ainvoke(initial_state)
-    except Exception as e:
-        logger.exception("Agent pipeline failed")
-        # Update notice with error
-        notice.status = "error"
-        notice.error_message = str(e)
-        notice.updated_at = datetime.utcnow()
-        await db.commit()
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
-
-    # Extract derived fields from entities
-    entities = final_state.get("entities", {})
-    llm_extracted = entities.get("llm_extracted", {})
-    if isinstance(llm_extracted, str):
-        try:
-            llm_extracted = json.loads(llm_extracted)
-        except json.JSONDecodeError:
-            llm_extracted = {}
-
-    # Parse demand amount
-    demand_amount = 0.0
-    raw_demand = llm_extracted.get("demand_amount")
-    if isinstance(raw_demand, dict):
-        demand_amount = float(raw_demand.get("total", 0) or 0)
-    elif isinstance(raw_demand, (int, float)):
-        demand_amount = float(raw_demand)
-
-    # Get primary section
-    sections = entities.get("SECTIONS", [])
-    primary_section = sections[0] if sections else ""
-
-    # Update notice with pipeline results
-    notice.notice_text = final_state.get("raw_text", "")
-    notice.entities = entities
-    notice.notice_annotations = final_state.get("notice_annotations", [])
-    notice.processing_status = final_state.get("processing_status", "unknown")
-    notice.risk_level = final_state.get("risk_level", "UNKNOWN")
-    notice.risk_score = float(final_state.get("risk_score", 0))
-    notice.risk_reasoning = final_state.get("risk_reasoning", "")
-    notice.is_time_barred = final_state.get("is_time_barred", False)
-    notice.time_bar_detail = final_state.get("time_bar_detail")
-    notice.fy = llm_extracted.get("financial_year", "")
-    notice.section = primary_section
-    notice.notice_type = llm_extracted.get("notice_type", "")
-    notice.demand_amount = demand_amount
-    notice.response_deadline = llm_extracted.get("response_deadline", "")
-    notice.draft_reply = final_state.get("draft_reply", "")
-    notice.draft_status = "draft_ready" if final_state.get("draft_reply") else "pending"
-    notice.verification_status = final_state.get("verification_status")
-    notice.verification_score = final_state.get("verification_score")
-    notice.verification_issues = final_state.get("verification_issues")
-    notice.accuracy_report = final_state.get("accuracy_report")
-    notice.status = "processed"
-    notice.updated_at = datetime.utcnow()
-
-    await db.commit()
-
-    await log_audit(
-        db, action="upload", resource_type="notice", resource_id=notice_id,
-        user=current_user, details={"filename": file.filename, "risk_level": notice.risk_level},
+    # Launch pipeline in the background (non-blocking)
+    asyncio.create_task(
+        _run_pipeline_background(notice_id, case_id, content, current_user.id, file.filename)
     )
-    await db.commit()
 
+    # Return 202 Accepted immediately — frontend polls GET /notices/{id}
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=202,
+        content={
+            "id": notice_id,
+            "case_id": case_id,
+            "status": "processing",
+            "message": "Upload accepted. Pipeline is processing in background.",
+        },
+    )
+
+
+async def _run_pipeline_background(
+    notice_id: str,
+    case_id: str,
+    pdf_bytes: bytes,
+    user_id: str,
+    original_filename: str | None,
+):
+    """Run the 5-agent pipeline in the background, then update the DB."""
+    async with AsyncSessionLocal() as db:
+        try:
+            initial_state = {
+                "pdf_bytes": pdf_bytes,
+                "case_id": case_id,
+                "current_agent": "start",
+            }
+
+            final_state = await graph.ainvoke(initial_state)
+
+            # Extract derived fields from entities
+            entities = final_state.get("entities", {})
+            llm_extracted = entities.get("llm_extracted", {})
+            if isinstance(llm_extracted, str):
+                try:
+                    llm_extracted = json.loads(llm_extracted)
+                except json.JSONDecodeError:
+                    llm_extracted = {}
+
+            # Parse demand amount
+            demand_amount = 0.0
+            raw_demand = llm_extracted.get("demand_amount")
+            if isinstance(raw_demand, dict):
+                demand_amount = float(raw_demand.get("total", 0) or 0)
+            elif isinstance(raw_demand, (int, float)):
+                demand_amount = float(raw_demand)
+
+            # Get primary section
+            sections = entities.get("SECTIONS", [])
+            primary_section = sections[0] if sections else ""
+
+            # Reload the notice in this session and update
+            result = await db.execute(select(Notice).where(Notice.id == notice_id))
+            notice = result.scalar_one_or_none()
+            if not notice:
+                logger.error(f"Background pipeline: notice {notice_id} not found in DB")
+                return
+
+            notice.notice_text = final_state.get("raw_text", "")
+            notice.entities = entities
+            notice.notice_annotations = final_state.get("notice_annotations", [])
+            notice.processing_status = final_state.get("processing_status", "unknown")
+            notice.risk_level = final_state.get("risk_level", "UNKNOWN")
+            notice.risk_score = float(final_state.get("risk_score", 0))
+            notice.risk_reasoning = final_state.get("risk_reasoning", "")
+            notice.is_time_barred = final_state.get("is_time_barred", False)
+            notice.time_bar_detail = final_state.get("time_bar_detail")
+            notice.fy = llm_extracted.get("financial_year", "")
+            notice.section = primary_section
+            notice.notice_type = llm_extracted.get("notice_type", "")
+            notice.demand_amount = demand_amount
+            notice.response_deadline = llm_extracted.get("response_deadline", "")
+            notice.draft_reply = final_state.get("draft_reply", "")
+            notice.draft_status = "draft_ready" if final_state.get("draft_reply") else "pending"
+            notice.verification_status = final_state.get("verification_status")
+            notice.verification_score = final_state.get("verification_score")
+            notice.verification_issues = final_state.get("verification_issues")
+            notice.accuracy_report = final_state.get("accuracy_report")
+            notice.status = "processed"
+            notice.updated_at = datetime.utcnow()
+
+            # Issue 2A: Single atomic commit for notice + audit log
+            await log_audit(
+                db, action="upload", resource_type="notice", resource_id=notice_id,
+                user=None, details={"filename": original_filename, "risk_level": notice.risk_level, "user_id": user_id},
+            )
+            await db.commit()
+
+            logger.info(f"Background pipeline complete: notice={notice_id} risk={notice.risk_level}")
+
+        except Exception as e:
+            logger.exception(f"Background pipeline failed for notice {notice_id}")
+            # Update notice with error
+            result = await db.execute(select(Notice).where(Notice.id == notice_id))
+            notice = result.scalar_one_or_none()
+            if notice:
+                notice.status = "error"
+                notice.error_message = str(e)
+                notice.updated_at = datetime.utcnow()
+                await db.commit()
+
+
+# ═══════════════════════════════════════════
+# Notice Serialization Helpers (Issue 8A: DRY)
+# ═══════════════════════════════════════════
+
+def _serialize_notice_brief(n: Notice) -> dict:
+    """Brief notice dict for list views."""
     return {
-        "id": notice_id,
-        "case_id": case_id,
-        "risk_level": notice.risk_level,
-        "status": "processed",
-        "draft_status": notice.draft_status,
+        "id": n.id,
+        "case_id": n.case_id,
+        "filename": n.filename,
+        "notice_type": n.notice_type or "Unknown",
+        "fy": n.fy or "",
+        "section": n.section or "",
+        "risk_level": n.risk_level or "UNKNOWN",
+        "demand_amount": n.demand_amount or 0,
+        "response_deadline": n.response_deadline or "",
+        "draft_status": n.draft_status or "pending",
+        "status": n.status,
+        "is_time_barred": n.is_time_barred or False,
+        "created_at": n.created_at.isoformat() if n.created_at else None,
     }
+
+
+def _serialize_notice_detail(n: Notice) -> dict:
+    """Full notice dict for detail view — extends brief."""
+    data = _serialize_notice_brief(n)
+    data.update({
+        "notice_text": n.notice_text or "",
+        "entities": n.entities or {},
+        "notice_annotations": n.notice_annotations or [],
+        "processing_status": n.processing_status,
+        "risk_score": n.risk_score or 0,
+        "risk_reasoning": n.risk_reasoning or "",
+        "time_bar_detail": n.time_bar_detail or {},
+        "draft_reply": n.draft_reply or "",
+        "verification_status": n.verification_status,
+        "verification_score": n.verification_score,
+        "verification_issues": n.verification_issues or [],
+        "accuracy_report": n.accuracy_report or {},
+        "error_message": n.error_message,
+        "updated_at": n.updated_at.isoformat() if n.updated_at else None,
+    })
+    return data
 
 
 # ═══════════════════════════════════════════
@@ -194,24 +263,7 @@ async def list_notices(
     notices = result.scalars().all()
 
     return {
-        "items": [
-            {
-                "id": n.id,
-                "case_id": n.case_id,
-                "filename": n.filename,
-                "notice_type": n.notice_type or "Unknown",
-                "fy": n.fy or "",
-                "section": n.section or "",
-                "risk_level": n.risk_level or "UNKNOWN",
-                "demand_amount": n.demand_amount or 0,
-                "response_deadline": n.response_deadline or "",
-                "draft_status": n.draft_status or "pending",
-                "status": n.status,
-                "is_time_barred": n.is_time_barred or False,
-                "created_at": n.created_at.isoformat() if n.created_at else None,
-            }
-            for n in notices
-        ],
+        "items": [_serialize_notice_brief(n) for n in notices],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -232,35 +284,7 @@ async def get_notice(id: str, db: AsyncSession = Depends(get_db), current_user: 
     if not notice:
         raise HTTPException(status_code=404, detail="Notice not found")
 
-    return {
-        "id": notice.id,
-        "case_id": notice.case_id,
-        "filename": notice.filename,
-        "notice_text": notice.notice_text or "",
-        "entities": notice.entities or {},
-        "notice_annotations": notice.notice_annotations or [],
-        "processing_status": notice.processing_status,
-        "risk_level": notice.risk_level or "UNKNOWN",
-        "risk_score": notice.risk_score or 0,
-        "risk_reasoning": notice.risk_reasoning or "",
-        "is_time_barred": notice.is_time_barred or False,
-        "time_bar_detail": notice.time_bar_detail or {},
-        "fy": notice.fy or "",
-        "section": notice.section or "",
-        "notice_type": notice.notice_type or "Unknown",
-        "demand_amount": notice.demand_amount or 0,
-        "response_deadline": notice.response_deadline or "",
-        "draft_reply": notice.draft_reply or "",
-        "draft_status": notice.draft_status or "pending",
-        "verification_status": notice.verification_status,
-        "verification_score": notice.verification_score,
-        "verification_issues": notice.verification_issues or [],
-        "accuracy_report": notice.accuracy_report or {},
-        "status": notice.status,
-        "error_message": notice.error_message,
-        "created_at": notice.created_at.isoformat() if notice.created_at else None,
-        "updated_at": notice.updated_at.isoformat() if notice.updated_at else None,
-    }
+    return _serialize_notice_detail(notice)
 
 
 # ═══════════════════════════════════════════
@@ -268,7 +292,7 @@ async def get_notice(id: str, db: AsyncSession = Depends(get_db), current_user: 
 # ═══════════════════════════════════════════
 
 @router.get("/notifications")
-async def list_notifications(db: AsyncSession = Depends(get_db)):
+async def list_notifications(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Generate notifications from recent notice activity."""
     result = await db.execute(
         select(Notice).order_by(desc(Notice.updated_at)).limit(20)
@@ -362,8 +386,8 @@ async def delete_notice(id: str, db: AsyncSession = Depends(get_db), current_use
         pass  # drafts table may not exist — safe to ignore
 
     await db.delete(notice)
-    await db.commit()
 
+    # Issue 2A: Single atomic commit for delete + audit log
     await log_audit(
         db, action="delete", resource_type="notice", resource_id=id,
         user=current_user, details={"case_id": case_id, "drafts_deleted": drafts_deleted},

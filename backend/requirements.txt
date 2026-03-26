@@ -14,8 +14,7 @@ langchain-groq>=0.1.0
 # Data Validation
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
-# Reranking
-cohere>=5.0.0
+
 # PDF Processing (for parsing agent)
 pypdf>=3.0.0
 PyMuPDF>=1.23.0

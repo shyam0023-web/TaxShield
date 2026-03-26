@@ -152,54 +152,52 @@ async def test_upload_rejects_empty_file(auth_client):
 @pytest.mark.anyio
 @patch("app.routes.notices.graph")
 async def test_upload_success(mock_graph, auth_client):
-    """Successful upload should return notice ID and risk level"""
+    """Successful upload should return 202 with notice ID (pipeline runs in background)"""
     mock_graph.ainvoke = AsyncMock(return_value=MOCK_PIPELINE_RESULT)
     
     response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("test_notice.pdf", b"%PDF-1.4 test content", "application/pdf")},
     )
-    assert response.status_code == 200
+    assert response.status_code == 202
     data = response.json()
     assert "id" in data
-    assert data["risk_level"] == "LOW"
-    assert data["status"] == "processed"
+    assert data["status"] == "processing"
 
 
 @pytest.mark.anyio
 @patch("app.routes.notices.graph")
 async def test_upload_saves_to_db(mock_graph, auth_client):
-    """Upload should persist notice to database"""
+    """Upload should create a notice in DB with 'processing' status"""
     mock_graph.ainvoke = AsyncMock(return_value=MOCK_PIPELINE_RESULT)
     
-    # Upload
+    # Upload returns 202 (background)
     response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("persist_test.pdf", b"%PDF-1.4 test", "application/pdf")},
     )
+    assert response.status_code == 202
     notice_id = response.json()["id"]
     
-    # Verify it's in the DB via GET
+    # Verify notice exists in DB (may still be processing)
     get_response = await auth_client.get(f"/api/notices/{notice_id}")
     assert get_response.status_code == 200
     data = get_response.json()
     assert data["id"] == notice_id
-    assert data["risk_level"] == "LOW"
-    assert data["notice_type"] == "SCN"
 
 
 @pytest.mark.anyio
 @patch("app.routes.notices.graph")
 async def test_upload_pipeline_failure(mock_graph, auth_client):
-    """Pipeline failure should return 500 and save error to DB"""
+    """Pipeline failure in background still returns 202 (error is saved to DB later)"""
     mock_graph.ainvoke = AsyncMock(side_effect=Exception("LLM timeout"))
     
     response = await auth_client.post(
         "/api/notices/upload",
         files={"file": ("fail_test.pdf", b"%PDF-1.4 test", "application/pdf")},
     )
-    assert response.status_code == 500
-    assert "Processing failed" in response.json()["detail"]
+    # Upload always returns 202 now — errors are handled in background
+    assert response.status_code == 202
 
 
 # ═══════════════════════════════════════════
@@ -233,9 +231,9 @@ async def test_get_notice_not_found(auth_client):
 # ═══════════════════════════════════════════
 
 @pytest.mark.anyio
-async def test_notifications_endpoint(client):
-    """GET /api/notifications should return a list"""
-    response = await client.get("/api/notifications")
+async def test_notifications_endpoint(auth_client):
+    """GET /api/notifications should return a list (requires auth after Issue 4A)"""
+    response = await auth_client.get("/api/notifications")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -256,7 +254,8 @@ async def test_upload_response_shape(mock_graph, auth_client):
         files={"file": ("shape_test.pdf", b"%PDF-1.4 test", "application/pdf")},
     )
     data = response.json()
-    required_fields = {"id", "case_id", "risk_level", "status", "draft_status"}
+    # Issue 12A: Upload now returns 202 with background-processing fields
+    required_fields = {"id", "case_id", "status", "message"}
     assert required_fields.issubset(set(data.keys())), f"Missing fields: {required_fields - set(data.keys())}"
 
 

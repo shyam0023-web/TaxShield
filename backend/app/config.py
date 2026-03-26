@@ -43,3 +43,11 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
 
 settings = Settings()
+
+# Issue 3A: Fail-fast if production uses the default dev secret
+_DEV_SECRET = "taxshield-dev-secret-change-in-production"
+if not settings.DEBUG and settings.JWT_SECRET_KEY == _DEV_SECRET:
+    raise ValueError(
+        "SECURITY: JWT_SECRET_KEY is set to the default dev secret but DEBUG=False. "
+        "Set a strong, unique JWT_SECRET_KEY environment variable for production."
+    )

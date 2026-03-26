@@ -48,8 +48,8 @@ async def approve_draft(id: str, body: DraftApproval, db: AsyncSession = Depends
 
     notice.draft_status = "approved"
     notice.updated_at = datetime.utcnow()
-    await db.commit()
 
+    # Issue 6A: Single atomic commit for notice + audit log
     await log_audit(
         db, action="approve", resource_type="draft", resource_id=id,
         user=current_user, details={"case_id": notice.case_id, "feedback": body.feedback},
@@ -84,8 +84,8 @@ async def reject_draft(id: str, body: DraftApproval, db: AsyncSession = Depends(
 
     notice.draft_status = "rejected"
     notice.updated_at = datetime.utcnow()
-    await db.commit()
 
+    # Issue 6A: Single atomic commit for notice + audit log
     await log_audit(
         db, action="reject", resource_type="draft", resource_id=id,
         user=current_user, details={"case_id": notice.case_id, "feedback": body.feedback},
@@ -107,7 +107,7 @@ async def reject_draft(id: str, body: DraftApproval, db: AsyncSession = Depends(
 # ═══════════════════════════════════════════
 
 @router.put("/notices/{id}/draft")
-async def update_draft(id: str, body: DraftEdit, db: AsyncSession = Depends(get_db)):
+async def update_draft(id: str, body: DraftEdit, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Edit the draft reply text. Resets status to draft_ready."""
     result = await db.execute(select(Notice).where(Notice.id == id))
     notice = result.scalar_one_or_none()
