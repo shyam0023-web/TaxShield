@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_HOURS: int = 24
     
     # CORS
-    CORS_ORIGINS: str = "*"  # Comma-separated origins, or * for dev
+    CORS_ORIGINS: str = "http://localhost:3000"  # Tightened from * — add more via .env
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60

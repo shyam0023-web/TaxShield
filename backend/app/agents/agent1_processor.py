@@ -11,6 +11,7 @@ from app.tools.input_sanitizer import sanitizer
 from app.tools.notice_structurer import structurer
 from app.tools.timebar import timebar
 from app.tools.redaction import redactor
+from app.utils import parse_llm_extracted
 import json
 import logging
 
@@ -91,12 +92,7 @@ class Agent1Processor:
         
         # ═══ Step 6: Preliminary Time-Bar Check ═══
         logger.info("Step 6/6: Preliminary time-bar check")
-        llm_data = entities.get("llm_extracted", {})
-        if isinstance(llm_data, str):
-            try:
-                llm_data = json.loads(llm_data)
-            except json.JSONDecodeError:
-                llm_data = {}
+        llm_data = parse_llm_extracted(entities)
         
         time_bar = timebar.check_potential_timebar(
             notice_date_str=llm_data.get("notice_date", ""),

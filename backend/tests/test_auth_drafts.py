@@ -83,7 +83,7 @@ async def test_register_success(client):
     data = response.json()
     assert "token" in data
     assert data["user"]["email"] == "newuser@test.com"
-    assert data["user"]["role"] == "user"  # default role
+    assert data["user"]["role"] == "ca"  # default role
 
 
 @pytest.mark.anyio
@@ -104,14 +104,14 @@ async def test_register_duplicate_email(client):
 
 @pytest.mark.anyio
 async def test_register_short_password(client):
-    """Password < 6 chars should return 400"""
+    """Password < 8 chars should return 400"""
     response = await client.post("/api/auth/register", json={
         "email": "shortpw@test.com",
         "password": "abc",
         "full_name": "Short PW",
     })
     assert response.status_code == 400
-    assert "6 characters" in response.json()["detail"]
+    assert "8 characters" in response.json()["detail"]
 
 
 @pytest.mark.anyio
@@ -135,13 +135,13 @@ async def test_login_success(client):
     # Register first
     await client.post("/api/auth/register", json={
         "email": "loginuser@test.com",
-        "password": "correctpass",
+        "password": "correctpass1",
         "full_name": "Login User",
     })
     # Login
     response = await client.post("/api/auth/login", json={
         "email": "loginuser@test.com",
-        "password": "correctpass",
+        "password": "correctpass1",
     })
     assert response.status_code == 200
     data = response.json()
@@ -155,7 +155,7 @@ async def test_login_wrong_password(client):
     # Register
     await client.post("/api/auth/register", json={
         "email": "wrongpw@test.com",
-        "password": "correctpass",
+        "password": "correctpass1",
         "full_name": "Wrong PW",
     })
     # Login with wrong password

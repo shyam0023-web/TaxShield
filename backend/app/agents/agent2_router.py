@@ -5,6 +5,7 @@ Routes to Agent 3 with appropriate tool set.
 """
 from app.llm.router import llm_router
 from app.tools.timebar import TimeBarCalculator
+from app.utils import parse_llm_extracted
 import json
 import logging
 
@@ -75,12 +76,7 @@ class Agent2Router:
         HIGH: >₹50L, prosecution, penalty
         """
         # Parse demand amount from entities
-        llm_data = entities.get("llm_extracted", {})
-        if isinstance(llm_data, str):
-            try:
-                llm_data = json.loads(llm_data)
-            except json.JSONDecodeError:
-                llm_data = {}
+        llm_data = parse_llm_extracted(entities)
         
         prompt = f"""Classify this GST notice risk level based on the extracted data.
 
@@ -112,13 +108,14 @@ First 1000 chars of notice:
             # Use LOW risk for classification to use Gemini Flash (fast)
             result = await llm_router.generate(prompt, risk_level="LOW", json_mode=True)
             return json.loads(result) if isinstance(result, str) else result
-        except BaseException as e:
+        except Exception as e:
             logger.error(f"Risk classification failed: {e}")
             return {
                 "risk_level": "MEDIUM",
                 "risk_score": 0.6,
                 "reasoning": f"Fallback to MEDIUM due to LLM error: {str(e)}",
-                "urgency": "NORMAL"
+                "urgency": "NORMAL",
+                "_warning": f"⚠ Risk analysis used MEDIUM default — LLM error: {str(e)}"
             }
     
     async def process(self, state_dict: dict) -> dict:
@@ -163,6 +160,11 @@ First 1000 chars of notice:
         # Step 3: Select tool set for Agent 3
         tools = self.TOOL_SETS.get(risk_level, self.TOOL_SETS["MEDIUM"])
         
+        # Issue 7: Collect warnings from fallback paths
+        warnings = state_dict.get("processing_warnings", []) or []
+        if risk.get("_warning"):
+            warnings.append(risk["_warning"])
+        
         # Return state dictionary updates
         return {
             "current_agent": "agent2",
@@ -172,7 +174,8 @@ First 1000 chars of notice:
             "deadline": {"urgency": risk.get("urgency", "NORMAL")},
             "is_time_barred": time_bar_result["is_time_barred"],
             "time_bar_detail": time_bar_result,
-            "assigned_tools": tools
+            "assigned_tools": tools,
+            "processing_warnings": warnings,
         }
 
 agent2 = Agent2Router()

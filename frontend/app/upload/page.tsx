@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/AuthGuard";
+import { getAuthHeaders } from "@/lib/api";
 import {
     Upload,
     FileText,
@@ -48,20 +49,22 @@ export default function UploadPage() {
         setStatus("idle");
 
         const droppedFile = e.dataTransfer.files[0];
-        if (droppedFile && droppedFile.type === "application/pdf") {
+        if (droppedFile && (droppedFile.type === "application/pdf" || droppedFile.name.toLowerCase().endsWith(".pdf"))) {
             setFile(droppedFile);
             setErrorMessage("");
         } else {
+            setFile(null);
             setErrorMessage("Please upload a PDF file.");
         }
     }, []);
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = e.target.files?.[0];
-        if (selectedFile && selectedFile.type === "application/pdf") {
+        if (selectedFile && (selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf"))) {
             setFile(selectedFile);
             setErrorMessage("");
         } else {
+            setFile(null);
             setErrorMessage("Please upload a PDF file.");
         }
     };
@@ -122,6 +125,7 @@ export default function UploadPage() {
 
             const res = await fetch("http://localhost:8000/api/notices/upload", {
                 method: "POST",
+                headers: getAuthHeaders(),
                 body: formData,
             });
 
@@ -134,12 +138,17 @@ export default function UploadPage() {
                     router.push("/");
                 }, 2000);
             } else {
-                throw new Error("Upload failed");
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.detail || `Upload failed (${res.status})`);
             }
-        } catch {
+        } catch (err: unknown) {
             setStatus("error");
             setProgress(0);
-            setErrorMessage("Upload failed. Make sure the backend server is running at http://localhost:8000");
+            const message = err instanceof Error ? err.message : "Upload failed";
+            setErrorMessage(message.includes("fetch") 
+                ? "Upload failed. Make sure the backend server is running at http://localhost:8000"
+                : message
+            );
         }
     };
 

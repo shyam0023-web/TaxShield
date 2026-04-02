@@ -6,6 +6,7 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 from app.config import settings
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +28,35 @@ class GroqClient:
             logger.info("GroqClient initialized with Llama 3.3")
         return self._llm
     
+    @staticmethod
+    def _clean_response(text) -> str:
+        """Clean LLM response: handle None, lists, markdown fences."""
+        # Handle None
+        if text is None:
+            return ""
+        
+        # Handle list content (newer LangChain versions)
+        if isinstance(text, list):
+            text = " ".join(str(item) for item in text)
+        
+        # Ensure string
+        text = str(text).strip()
+        
+        # Remove markdown code fences: ```json ... ``` or ``` ... ```
+        match = re.search(r'```(?:json|JSON)?\s*\n?(.*?)\n?\s*```', text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        
+        return text
+
     async def generate(self, prompt: str, json_mode: bool = False) -> str:
         """Generate response using Groq."""
         try:
             llm = self._get_llm()
             response = await llm.ainvoke([HumanMessage(content=prompt)])
-            return response.content
+            result = self._clean_response(response.content)
+            logger.debug(f"Groq response length: {len(result)} chars")
+            return result
         except Exception as e:
             logger.error(f"Groq generation failed: {e}")
             raise

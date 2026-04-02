@@ -18,6 +18,7 @@ from app.models.notice import Notice
 from app.models.user import User
 from app.auth.deps import get_current_user, require_role
 from app.audit import log_audit
+from app.middleware.rate_limiter import check_upload_rate
 
 router = APIRouter()
 
@@ -37,6 +38,9 @@ async def upload_notice(
     current_user: User = Depends(get_current_user),
 ):
     """Upload PDF → Return 202 → Process pipeline in background."""
+
+    # Per-user upload rate limit (stricter than global IP limit)
+    await check_upload_rate(current_user.id)
 
     # Validate file extension
     filename = (file.filename or "").lower()
@@ -59,12 +63,14 @@ async def upload_notice(
         raise HTTPException(status_code=400, detail="Empty file uploaded")
 
     # Create notice record in DB (status=processing)
-    case_id = file.filename or f"notice_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    base_name = file.filename or "notice"
+    case_id = f"{base_name}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
     now = datetime.utcnow()
 
     notice = Notice(
         case_id=case_id,
         filename=file.filename or "unknown.pdf",
+        user_id=current_user.id,  # Issue 3A: Track notice owner
         status="processing",
         created_at=now,
         updated_at=now,
@@ -92,6 +98,68 @@ async def upload_notice(
     )
 
 
+
+PIPELINE_TIMEOUT_SECONDS = 120  # Max time for full pipeline (OCR → NER → Risk → Legal → Draft → Verify)
+
+
+# ═══════════════════════════════════════════
+# Pipeline Helpers — extracted for testability
+# ═══════════════════════════════════════════
+
+def _map_pipeline_state_to_notice(notice: Notice, final_state: dict) -> None:
+    """
+    Pure function: map all pipeline output fields onto a Notice model instance.
+    No DB access, no IO — fully unit-testable.
+    Mutates `notice` in place.
+    """
+    from app.utils import parse_llm_extracted, parse_demand_amount
+
+    entities = final_state.get("entities", {})
+    llm_extracted = parse_llm_extracted(entities)
+    sections = entities.get("SECTIONS", [])
+
+    notice.notice_text = final_state.get("raw_text", "")
+    notice.entities = entities
+    notice.notice_annotations = final_state.get("notice_annotations", [])
+    notice.processing_status = final_state.get("processing_status", "unknown")
+    notice.risk_level = final_state.get("risk_level", "UNKNOWN")
+    notice.risk_score = float(final_state.get("risk_score", 0))
+    notice.risk_reasoning = final_state.get("risk_reasoning", "")
+    notice.is_time_barred = final_state.get("is_time_barred", False)
+    notice.time_bar_detail = final_state.get("time_bar_detail")
+    notice.fy = llm_extracted.get("financial_year", "")
+    notice.section = sections[0] if sections else ""
+    notice.notice_type = llm_extracted.get("notice_type", "")
+    notice.demand_amount = parse_demand_amount(llm_extracted)
+    notice.response_deadline = llm_extracted.get("response_deadline", "")
+    notice.draft_reply = final_state.get("draft_reply", "")
+    notice.draft_status = "draft_ready" if final_state.get("draft_reply") else "pending"
+    notice.verification_status = final_state.get("verification_status")
+    notice.verification_score = final_state.get("verification_score")
+    notice.verification_issues = final_state.get("verification_issues")
+    notice.accuracy_report = final_state.get("accuracy_report")
+    notice.status = "processed"
+    notice.updated_at = datetime.utcnow()
+
+
+async def _mark_notice_error(notice_id: str, error: Exception) -> None:
+    """
+    Isolated error path: update notice status to 'error' in a fresh DB session.
+    Uses its own session so a DB failure here doesn't swallow the original error.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Notice).where(Notice.id == notice_id))
+            notice = result.scalar_one_or_none()
+            if notice:
+                notice.status = "error"
+                notice.error_message = str(error)
+                notice.updated_at = datetime.utcnow()
+                await db.commit()
+    except Exception:
+        logger.exception(f"Failed to mark notice {notice_id} as error — original error was: {error}")
+
+
 async def _run_pipeline_background(
     notice_id: str,
     case_id: str,
@@ -99,87 +167,48 @@ async def _run_pipeline_background(
     user_id: str,
     original_filename: str | None,
 ):
-    """Run the 5-agent pipeline in the background, then update the DB."""
-    async with AsyncSessionLocal() as db:
+    """
+    Orchestrate the 5-agent pipeline in the background, then persist results.
+    Capped at PIPELINE_TIMEOUT_SECONDS to prevent zombie 'processing' notices.
+    """
+    try:
+        initial_state = {
+            "pdf_bytes": pdf_bytes,
+            "case_id": case_id,
+            "current_agent": "start",
+        }
+
         try:
-            initial_state = {
-                "pdf_bytes": pdf_bytes,
-                "case_id": case_id,
-                "current_agent": "start",
-            }
+            final_state = await asyncio.wait_for(
+                graph.ainvoke(initial_state),
+                timeout=PIPELINE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError(
+                f"Pipeline timed out after {PIPELINE_TIMEOUT_SECONDS}s. "
+                "This usually means a slow LLM response. Try uploading again."
+            )
 
-            final_state = await graph.ainvoke(initial_state)
-
-            # Extract derived fields from entities
-            entities = final_state.get("entities", {})
-            llm_extracted = entities.get("llm_extracted", {})
-            if isinstance(llm_extracted, str):
-                try:
-                    llm_extracted = json.loads(llm_extracted)
-                except json.JSONDecodeError:
-                    llm_extracted = {}
-
-            # Parse demand amount
-            demand_amount = 0.0
-            raw_demand = llm_extracted.get("demand_amount")
-            if isinstance(raw_demand, dict):
-                demand_amount = float(raw_demand.get("total", 0) or 0)
-            elif isinstance(raw_demand, (int, float)):
-                demand_amount = float(raw_demand)
-
-            # Get primary section
-            sections = entities.get("SECTIONS", [])
-            primary_section = sections[0] if sections else ""
-
-            # Reload the notice in this session and update
+        async with AsyncSessionLocal() as db:
             result = await db.execute(select(Notice).where(Notice.id == notice_id))
             notice = result.scalar_one_or_none()
             if not notice:
                 logger.error(f"Background pipeline: notice {notice_id} not found in DB")
                 return
 
-            notice.notice_text = final_state.get("raw_text", "")
-            notice.entities = entities
-            notice.notice_annotations = final_state.get("notice_annotations", [])
-            notice.processing_status = final_state.get("processing_status", "unknown")
-            notice.risk_level = final_state.get("risk_level", "UNKNOWN")
-            notice.risk_score = float(final_state.get("risk_score", 0))
-            notice.risk_reasoning = final_state.get("risk_reasoning", "")
-            notice.is_time_barred = final_state.get("is_time_barred", False)
-            notice.time_bar_detail = final_state.get("time_bar_detail")
-            notice.fy = llm_extracted.get("financial_year", "")
-            notice.section = primary_section
-            notice.notice_type = llm_extracted.get("notice_type", "")
-            notice.demand_amount = demand_amount
-            notice.response_deadline = llm_extracted.get("response_deadline", "")
-            notice.draft_reply = final_state.get("draft_reply", "")
-            notice.draft_status = "draft_ready" if final_state.get("draft_reply") else "pending"
-            notice.verification_status = final_state.get("verification_status")
-            notice.verification_score = final_state.get("verification_score")
-            notice.verification_issues = final_state.get("verification_issues")
-            notice.accuracy_report = final_state.get("accuracy_report")
-            notice.status = "processed"
-            notice.updated_at = datetime.utcnow()
+            _map_pipeline_state_to_notice(notice, final_state)
 
-            # Issue 2A: Single atomic commit for notice + audit log
             await log_audit(
                 db, action="upload", resource_type="notice", resource_id=notice_id,
                 user=None, details={"filename": original_filename, "risk_level": notice.risk_level, "user_id": user_id},
             )
             await db.commit()
-
             logger.info(f"Background pipeline complete: notice={notice_id} risk={notice.risk_level}")
 
-        except Exception as e:
-            logger.exception(f"Background pipeline failed for notice {notice_id}")
-            # Update notice with error
-            result = await db.execute(select(Notice).where(Notice.id == notice_id))
-            notice = result.scalar_one_or_none()
-            if notice:
-                notice.status = "error"
-                notice.error_message = str(e)
-                notice.updated_at = datetime.utcnow()
-                await db.commit()
+    except Exception as e:
+        logger.exception(f"Background pipeline failed for notice {notice_id}")
+        await _mark_notice_error(notice_id, e)
+
 
 
 # ═══════════════════════════════════════════
@@ -241,9 +270,13 @@ async def list_notices(
     current_user: User = Depends(get_current_user),
 ):
     """Get notices with pagination, ordered by most recent first."""
+    from sqlalchemy import or_
+    # Issue 3A: Filter by owner (also show legacy notices with no user_id)
+    user_filter = or_(Notice.user_id == current_user.id, Notice.user_id.is_(None))
+
     # Base query
-    query = select(Notice).order_by(desc(Notice.created_at))
-    count_query = select(func.count(Notice.id))
+    query = select(Notice).where(user_filter).order_by(desc(Notice.created_at))
+    count_query = select(func.count(Notice.id)).where(user_filter)
 
     # Filters
     if status:
@@ -278,7 +311,13 @@ async def list_notices(
 @router.get("/notices/{id}")
 async def get_notice(id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get notice by ID with full details."""
-    result = await db.execute(select(Notice).where(Notice.id == id))
+    from sqlalchemy import or_
+    result = await db.execute(
+        select(Notice).where(
+            Notice.id == id,
+            or_(Notice.user_id == current_user.id, Notice.user_id.is_(None)),  # Issue 3A
+        )
+    )
     notice = result.scalar_one_or_none()
 
     if not notice:
@@ -294,8 +333,10 @@ async def get_notice(id: str, db: AsyncSession = Depends(get_db), current_user: 
 @router.get("/notifications")
 async def list_notifications(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Generate notifications from recent notice activity."""
+    from sqlalchemy import or_
+    user_filter = or_(Notice.user_id == current_user.id, Notice.user_id.is_(None))
     result = await db.execute(
-        select(Notice).order_by(desc(Notice.updated_at)).limit(20)
+        select(Notice).where(user_filter).order_by(desc(Notice.updated_at)).limit(20)
     )
     notices = result.scalars().all()
 
@@ -364,8 +405,14 @@ async def delete_notice(id: str, db: AsyncSession = Depends(get_db), current_use
     """
     from fastapi.responses import JSONResponse
 
-    # Find the notice
-    result = await db.execute(select(Notice).where(Notice.id == id))
+    # Find the notice (Issue 3A: admin can delete any, CA can delete own)
+    from sqlalchemy import or_
+    result = await db.execute(
+        select(Notice).where(
+            Notice.id == id,
+            or_(Notice.user_id == current_user.id, Notice.user_id.is_(None)),
+        )
+    )
     notice = result.scalar_one_or_none()
 
     if not notice:

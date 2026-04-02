@@ -5,7 +5,7 @@ Hybrid: Regex for structured fields (GSTIN, DIN) + LLM for unstructured
 import re
 import json
 from typing import Dict, List, Optional
-from app.llm.gemini_client import gemini
+from app.llm.router import llm_router
 from app.logger import logger
 from app.tools.patterns import (
     GSTIN_PATTERN, DIN_PATTERN, SECTION_PATTERN,
@@ -70,59 +70,32 @@ class NoticeNER:
             {text[:3000]}
             """
             
-            llm_entities = await gemini.generate(llm_prompt, json_mode=True)
+            llm_entities = await llm_router.generate(llm_prompt, risk_level="LOW")
             
-            # Parse JSON response
+            # Parse JSON response with robust fallback
+            logger.info(f"NER LLM response ({len(llm_entities)} chars): {llm_entities[:200]}")
             try:
                 entities["llm_extracted"] = json.loads(llm_entities)
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse LLM entities as JSON")
-                entities["llm_extracted"] = {}
+            except (json.JSONDecodeError, TypeError):
+                # Try extracting JSON object from within text
+                import re
+                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', llm_entities, re.DOTALL)
+                if json_match:
+                    try:
+                        entities["llm_extracted"] = json.loads(json_match.group())
+                        logger.info("NER: Extracted JSON via regex fallback")
+                    except json.JSONDecodeError:
+                        logger.warning(f"NER: Failed to parse even regex-extracted JSON")
+                        entities["llm_extracted"] = {}
+                else:
+                    logger.warning(f"NER: No JSON found in LLM response")
+                    entities["llm_extracted"] = {}
             
             return entities
             
         except Exception as e:
             logger.error(f"Entity extraction failed: {e}")
             raise
-    
-    async def extract_amounts(self, text: str) -> Dict[str, float]:
-        """Extract and parse monetary amounts."""
-        try:
-            amounts = re.findall(AMOUNT_PATTERN, text)
-            parsed_amounts = []
-            
-            for amount in amounts:
-                # Clean and convert to float
-                clean_amount = re.sub(r'[₹,\s]', '', amount)
-                try:
-                    parsed_amounts.append(float(clean_amount))
-                except ValueError:
-                    continue
-            
-            return {
-                "raw_amounts": amounts,
-                "parsed_amounts": parsed_amounts,
-                "total_amount": sum(parsed_amounts) if parsed_amounts else 0.0
-            }
-            
-        except Exception as e:
-            logger.error(f"Amount extraction failed: {e}")
-            return {"raw_amounts": [], "parsed_amounts": [], "total_amount": 0.0}
-    
-    async def extract_dates(self, text: str) -> List[str]:
-        """Extract dates in various formats."""
-        try:
-            
-            all_dates = []
-            for pattern in DATE_PATTERNS:
-                dates = re.findall(pattern, text, re.IGNORECASE)
-                all_dates.extend(dates)
-            
-            return list(set(all_dates))  # Remove duplicates
-            
-        except Exception as e:
-            logger.error(f"Date extraction failed: {e}")
-            return []
     
     async def validate_entities(self, entities: Dict) -> Dict[str, any]:
         """Validate extracted entities for consistency and completeness."""
@@ -166,36 +139,6 @@ class NoticeNER:
                 "errors": ["Validation failed"],
                 "completeness_score": 0.0
             }
-    
-    async def extract_critical_entities_only(self, text: str) -> Dict[str, List]:
-        """Extract only critical entities for quick processing."""
-        try:
-            critical = {}
-            
-            # GSTIN
-            gstins = re.findall(GSTIN_PATTERN, text)
-            critical["GSTIN"] = [
-                {"value": g, "valid": self.validate_gstin_checksum(g)}
-                for g in set(gstins)
-            ]
-            
-            # DIN
-            dins = re.findall(DIN_PATTERN, text)
-            critical["DIN"] = [{"value": d} for d in set(dins)]
-            
-            # Amounts
-            amounts = await self.extract_amounts(text)
-            critical["AMOUNTS"] = amounts
-            
-            # Sections
-            sections = re.findall(SECTION_PATTERN, text)
-            critical["SECTIONS"] = list(set(sections))
-            
-            return critical
-            
-        except Exception as e:
-            logger.error(f"Critical entity extraction failed: {e}")
-            raise
 
 
 # Singleton instance

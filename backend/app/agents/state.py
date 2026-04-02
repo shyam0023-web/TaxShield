@@ -54,4 +54,7 @@ class PipelineState(TypedDict, total=False):
     human_review_notes: str
     escalation_history: list
     current_agent: str
-
+    
+    # Issue 7: Processing warnings — agents append here when using fallback defaults
+    # Example: "Risk classification used MEDIUM default — LLM was unavailable"
+    processing_warnings: Optional[list]

@@ -63,6 +63,25 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
+    # Issue 2A: Clean up zombie notices from previous crashes
+    try:
+        from app.database import AsyncSessionLocal
+        from sqlalchemy import select, update
+        from app.models.notice import Notice
+        from datetime import datetime, timedelta
+        async with AsyncSessionLocal() as db:
+            stale_cutoff = datetime.utcnow() - timedelta(minutes=5)
+            result = await db.execute(
+                update(Notice)
+                .where(Notice.status == "processing", Notice.created_at < stale_cutoff)
+                .values(status="error", error_message="Server restarted during processing. Please re-upload.")
+            )
+            if result.rowcount > 0:
+                await db.commit()
+                logger.info(f"Cleaned up {result.rowcount} stale 'processing' notices")
+    except Exception as e:
+        logger.warning(f"Stale notice cleanup failed (non-fatal): {e}")
+
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     scraper_task = asyncio.create_task(_weekly_cbic_scrape())

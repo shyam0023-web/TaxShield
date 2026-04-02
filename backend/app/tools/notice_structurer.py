@@ -2,7 +2,7 @@
 TaxShield — Notice Structurer
 Annotates each paragraph with a role: HEADER, FACTS, DEMAND, PENALTY, PRAYER, PROCEDURE
 """
-from app.llm.gemini_client import gemini
+from app.llm.router import llm_router
 import json
 import logging
 
@@ -44,7 +44,7 @@ Roles (pick exactly one per paragraph):
 Notice text:
 {text[:4000]}"""
             
-            result = await gemini.generate(prompt, json_mode=True)
+            result = await llm_router.generate(prompt, risk_level="LOW")
             
             try:
                 annotations = json.loads(result)

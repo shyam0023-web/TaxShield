@@ -56,8 +56,8 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     if result.scalar_one_or_none():
         return JSONResponse(status_code=409, content={"detail": "Email already registered"})
 
-    if len(body.password) < 6:
-        return JSONResponse(status_code=400, content={"detail": "Password must be at least 6 characters"})
+    if len(body.password) < 8:
+        return JSONResponse(status_code=400, content={"detail": "Password must be at least 8 characters"})
 
     user = User(
         email=body.email,

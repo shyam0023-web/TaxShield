@@ -16,6 +16,7 @@ from app.llm.router import llm_router
 from app.retrieval.hybrid import searcher
 from app.retrieval.section_kb import section_kb
 from app.agents.prompt_loader import load_prompt
+from app.utils import parse_llm_extracted, parse_demand_amount
 
 logger = logging.getLogger(__name__)
 
@@ -75,12 +76,7 @@ class Agent3Analyst:
     async def _search_circulars(self, entities: dict, raw_text: str) -> list:
         """2-tier search: curated section KB (primary) → FAISS hybrid (fallback).
         WISC: Section-select is ~0.1ms; FAISS is ~5ms fallback."""
-        llm_data = entities.get("llm_extracted", {})
-        if isinstance(llm_data, str):
-            try:
-                llm_data = json.loads(llm_data)
-            except json.JSONDecodeError:
-                llm_data = {}
+        llm_data = parse_llm_extracted(entities)
 
         sections = entities.get("SECTIONS", [])
         notice_type = llm_data.get("notice_type", "")
@@ -138,12 +134,7 @@ class Agent3Analyst:
         """Use LLM to detect contradictions in the notice.
         WISC: Receives isolated context (entities, raw_text, notice_annotations)."""
         entities = ctx.get("entities", {})
-        llm_data = entities.get("llm_extracted", {})
-        if isinstance(llm_data, str):
-            try:
-                llm_data = json.loads(llm_data)
-            except json.JSONDecodeError:
-                llm_data = {}
+        llm_data = parse_llm_extracted(entities)
 
         annotations = ctx.get("notice_annotations", [])
         notice_structure = "Not available"
@@ -173,12 +164,7 @@ class Agent3Analyst:
         """Analyze notice for procedural defects.
         WISC: Receives isolated context (entities, raw_text)."""
         entities = ctx.get("entities", {})
-        llm_data = entities.get("llm_extracted", {})
-        if isinstance(llm_data, str):
-            try:
-                llm_data = json.loads(llm_data)
-            except json.JSONDecodeError:
-                llm_data = {}
+        llm_data = parse_llm_extracted(entities)
 
         dins = [d.get("value", "") for d in entities.get("DIN", [])]
 
@@ -204,12 +190,7 @@ class Agent3Analyst:
         """Build defense strategy combining all findings.
         WISC: Receives isolated context (entities, raw_text, risk_level)."""
         entities = ctx.get("entities", {})
-        llm_data = entities.get("llm_extracted", {})
-        if isinstance(llm_data, str):
-            try:
-                llm_data = json.loads(llm_data)
-            except json.JSONDecodeError:
-                llm_data = {}
+        llm_data = parse_llm_extracted(entities)
 
         sections = entities.get("SECTIONS", [])
 

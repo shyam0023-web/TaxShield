@@ -18,10 +18,17 @@ class GlobalErrorHandlerMiddleware(BaseHTTPMiddleware):
             from fastapi import HTTPException
             if isinstance(exc, HTTPException):
                 raise exc
-            logger.exception("Global exception handler caught error")
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"Global exception handler caught error: {exc}\n{tb}")
+            
+            # Issue 13: Never leak internal details in production
+            from app.config import settings
+            detail = str(exc) if settings.DEBUG else "An unexpected error occurred. Please try again."
+            
             return JSONResponse(
                 status_code=500,
-                content={"error": "Internal Server Error", "detail": "An unexpected error occurred. Please contact support."},
+                content={"error": "Internal Server Error", "detail": detail},
             )
 
 

@@ -16,6 +16,9 @@ class Notice(Base):
     case_id = Column(String, unique=True, nullable=False)
     filename = Column(String, nullable=False)
     
+    # Issue 3A: Owner — nullable for backward compat with existing notices
+    user_id = Column(String(36), nullable=True, index=True)
+    
     # Agent 1 output
     notice_text = Column(Text)  # PII-redacted OCR text
     entities = Column(JSON)  # Extracted entities (GSTIN, DIN, sections, etc.)

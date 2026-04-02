@@ -18,6 +18,7 @@ import logging
 
 from app.llm.router import llm_router
 from app.agents.prompt_loader import load_prompt
+from app.utils import parse_llm_extracted
 from app.retrieval.section_kb import section_kb
 
 logger = logging.getLogger(__name__)
@@ -153,12 +154,7 @@ class Agent5Verifier:
         if isinstance(entities, dict):
             for sec in entities.get("SECTIONS", []):
                 known_sections.add(sec)
-            llm_data = entities.get("llm_extracted", {})
-            if isinstance(llm_data, str):
-                try:
-                    llm_data = json.loads(llm_data)
-                except (json.JSONDecodeError, TypeError):
-                    llm_data = {}
+            llm_data = parse_llm_extracted(entities)
             if isinstance(llm_data, dict):
                 for sec in llm_data.get("sections_referenced", []):
                     known_sections.add(str(sec))

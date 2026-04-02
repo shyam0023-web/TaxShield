@@ -12,6 +12,7 @@ import logging
 from app.llm.router import llm_router
 from app.retrieval.hybrid import searcher
 from app.agents.prompt_loader import load_prompt
+from app.utils import parse_llm_extracted, parse_demand_amount
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +59,7 @@ class Agent4Drafter:
         time_bar_detail = state_dict.get("time_bar_detail", {})
 
         # Parse LLM-extracted entities
-        llm_data = entities.get("llm_extracted", {})
-        if isinstance(llm_data, str):
-            try:
-                llm_data = json.loads(llm_data)
-            except json.JSONDecodeError:
-                llm_data = {}
+        llm_data = parse_llm_extracted(entities)
 
         # Common variables
         gstins = [g.get("value", "") for g in entities.get("GSTIN", [])]
@@ -75,12 +71,7 @@ class Agent4Drafter:
         response_deadline = llm_data.get("response_deadline", "")
 
         # Parse demand amount
-        demand_amount = 0
-        raw_demand = llm_data.get("demand_amount")
-        if isinstance(raw_demand, dict):
-            demand_amount = raw_demand.get("total", 0) or 0
-        elif isinstance(raw_demand, (int, float)):
-            demand_amount = raw_demand
+        demand_amount = parse_demand_amount(llm_data)
 
         # ═══ Retrieve relevant circulars ═══
         # Prefer Agent 3's pre-fetched results if available

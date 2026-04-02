@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
+import { Header } from "@/components/Header";
 import { Providers } from "@/components/Providers";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -22,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
         style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
@@ -30,7 +31,10 @@ export default function RootLayout({
         <Providers>
           <div className="app-shell">
             <Sidebar />
-            <main className="main-content">{children}</main>
+            <main className="main-content">
+              <Header />
+              {children}
+            </main>
           </div>
         </Providers>
       </body>

@@ -108,16 +108,49 @@ class OCREngine:
             })
         return pages
 
+    def _extract_text_pymupdf(self, pdf_bytes: bytes) -> list:
+        """Extract text directly from PDF using PyMuPDF (instant for digital PDFs)."""
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        pages = []
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text("text").strip()
+            pages.append({
+                "page_number": page_num + 1,
+                "text": text,
+                "confidence": 0.95,  # Native PDF text is high confidence
+                "line_count": len(text.split("\n")) if text else 0,
+            })
+        doc.close()
+        return pages
+
     async def extract_from_pdf(self, pdf_bytes: bytes) -> dict:
         """
-        Extract text from PDF using local OCR.
-        Primary: Surya OCR | Fallback: Tesseract
-        Returns same shape as the old Gemini Vision OCR for compatibility.
+        Extract text from PDF.
+        Strategy:
+          1. PyMuPDF native text extraction (instant for digital PDFs)
+          2. If text is too short (<200 chars) → scanned PDF → use Surya OCR
+          3. Fallback: Tesseract
         """
         import asyncio
 
         try:
-            # Convert PDF to images (CPU, fast)
+            # Step 1: Try PyMuPDF native text extraction (instant)
+            pages = await asyncio.to_thread(self._extract_text_pymupdf, pdf_bytes)
+            total_text = "\n\n".join([p["text"] for p in pages])
+
+            if len(total_text.strip()) > 200:
+                # Digital PDF — got enough text, no OCR needed
+                logger.info(f"PyMuPDF extracted {len(total_text)} chars from {len(pages)} pages (digital PDF)")
+                return {
+                    "pages": pages,
+                    "full_text": total_text,
+                    "total_pages": len(pages),
+                    "ocr_engine": "pymupdf_native",
+                }
+
+            # Step 2: Scanned PDF — need OCR
+            logger.info(f"PyMuPDF got only {len(total_text)} chars — scanned PDF, using OCR...")
             images = await asyncio.to_thread(self._pdf_to_images, pdf_bytes)
             logger.info(f"Converted PDF to {len(images)} page images")
 
