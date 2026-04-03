@@ -75,7 +75,41 @@ export default function NoticeDetailPage() {
     };
 
     const handlePrint = () => {
-        window.print();
+        if (!notice.draft_reply) return;
+        const printWindow = window.open("", "_blank");
+        if (!printWindow) return;
+
+        const lines = notice.draft_reply.split("\n");
+        let contentHtml = "";
+        for (const line of lines) {
+            if (/^[A-Z][A-Z\s\-—\/]+:?\s*$/.test(line)) {
+                contentHtml += '<h3 style="margin-top:1.2em;margin-bottom:0.2em;font-size:15px">' + line + "</h3>";
+            } else if (line.trim() === "" || line.trim() === "---") {
+                contentHtml += '<div style="height:0.5em"></div>';
+            } else if (/^\s*[\d]+\.\s/.test(line) || /^\s*[-•]\s/.test(line)) {
+                contentHtml += '<div style="padding-left:1.5em;margin:0.2em 0">' + line + "</div>";
+            } else {
+                contentHtml += "<p>" + line + "</p>";
+            }
+        }
+
+        const html = [
+            "<!DOCTYPE html><html><head>",
+            "<title>Draft Reply — " + notice.case_id + "</title>",
+            "<style>",
+            "@import url('https://fonts.googleapis.com/css2?family=Times+New+Roman:wght@400;700&display=swap');",
+            "body{font-family:'Times New Roman', Times, serif;max-width:800px;margin:40px auto;padding:0 24px;color:#000;line-height:1.6;font-size:12pt}",
+            "p{margin:0.5em 0}",
+            "@media print{body{margin:0;padding:20mm}}",
+            "</style></head><body>",
+            '<div class="content">' + contentHtml + "</div>",
+            "</body></html>",
+        ].join("\n");
+
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => { printWindow.print(); }, 300);
     };
 
     const handleDelete = async () => {
@@ -139,9 +173,16 @@ export default function NoticeDetailPage() {
         <AuthGuard>
             <>
                 {/* ── Toolbar ── */}
-                <header className="page-header" style={{ borderBottom: "1px solid var(--border-primary)" }}>
+                <header style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "space-between", 
+                    paddingBottom: "var(--space-4)",
+                    marginBottom: "var(--space-6)",
+                    borderBottom: "1px solid var(--border-primary)" 
+                }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)" }}>
-                        <button className="btn btn-ghost btn-icon" onClick={() => router.push("/")} aria-label="Back">
+                        <button className="btn btn-outline btn-icon" onClick={() => router.push("/")} aria-label="Back" style={{ border: "none" }}>
                             <ArrowLeft size={20} />
                         </button>
                         <div>
@@ -151,21 +192,22 @@ export default function NoticeDetailPage() {
                                     {notice.case_id}
                                 </span>
                             </div>
-                            <p style={{ margin: 0, fontSize: "var(--font-xs)", color: "var(--text-tertiary)" }}>
+                            <p style={{ margin: 0, fontSize: "var(--font-xs)", color: "var(--text-tertiary)", marginTop: 2 }}>
                                 {notice.notice_type || "GST Notice"} {notice.fy ? `· FY ${notice.fy}` : ""} {notice.section ? `· Section ${notice.section}` : ""}
                             </p>
                         </div>
                     </div>
 
                     {/* Action buttons */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
                         {notice.draft_reply && !editing && (
                             <>
-                                <button className="btn btn-ghost btn-icon" onClick={handleCopy} title={copied ? "Copied!" : "Copy text"} aria-label="Copy">
-                                    {copied ? <CheckCircle2 size={17} style={{ color: "var(--success)" }} /> : <Copy size={17} />}
+                                <button className="btn btn-outline" onClick={handleCopy} style={{ fontSize: "var(--font-sm)" }}>
+                                    {copied ? <CheckCircle2 size={15} style={{ color: "var(--success)" }} /> : <Copy size={15} />} 
+                                    {copied ? "Copied" : "Copy"}
                                 </button>
-                                <button className="btn btn-ghost btn-icon" onClick={handlePrint} title="Print" aria-label="Print">
-                                    <Printer size={17} />
+                                <button className="btn btn-outline" onClick={handlePrint} style={{ fontSize: "var(--font-sm)" }}>
+                                    <Printer size={15} /> Print
                                 </button>
                                 <button className="btn btn-outline" onClick={() => { setEditText(notice.draft_reply || ""); setEditing(true); }} style={{ fontSize: "var(--font-sm)" }}>
                                     <Edit3 size={15} /> Edit
