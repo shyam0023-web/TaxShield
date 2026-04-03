@@ -51,3 +51,9 @@ if not settings.DEBUG and settings.JWT_SECRET_KEY == _DEV_SECRET:
         "SECURITY: JWT_SECRET_KEY is set to the default dev secret but DEBUG=False. "
         "Set a strong, unique JWT_SECRET_KEY environment variable for production."
     )
+
+# Fail-fast if GROQ_API_KEY is missing in production
+if not settings.DEBUG and not settings.GROQ_API_KEY:
+    raise ValueError(
+        "GROQ_API_KEY is required in production. Set it as an environment variable."
+    )

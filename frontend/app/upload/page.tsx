@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/AuthGuard";
 import { getAuthHeaders } from "@/lib/api";
+import { API_BASE } from "@/lib/config";
 import {
     Upload,
     FileText,
@@ -123,7 +124,7 @@ export default function UploadPage() {
                 });
             }, 300);
 
-            const res = await fetch("http://localhost:8000/api/notices/upload", {
+            const res = await fetch(`${API_BASE}/api/notices/upload`, {
                 method: "POST",
                 headers: getAuthHeaders(),
                 body: formData,
@@ -146,7 +147,7 @@ export default function UploadPage() {
             setProgress(0);
             const message = err instanceof Error ? err.message : "Upload failed";
             setErrorMessage(message.includes("fetch") 
-                ? "Upload failed. Make sure the backend server is running at http://localhost:8000"
+                ? "Upload failed. Make sure the backend server is running."
                 : message
             );
         }

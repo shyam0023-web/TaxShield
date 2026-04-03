@@ -17,10 +17,17 @@ elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 # Create async engine
+_is_sqlite = db_url.startswith("sqlite")
 engine = create_async_engine(
     db_url,
     echo=settings.DEBUG,
-    future=True
+    future=True,
+    **({} if _is_sqlite else {
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_timeout": 30,
+        "pool_recycle": 1800,  # 30 min — prevents stale Supabase connections
+    })
 )
 
 # Create async session factory

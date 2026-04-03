@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.local
+*.db
+venv/
+.venv/
+.git/
+.github/
+tests/
+*.md
+*.log
+node_modules/

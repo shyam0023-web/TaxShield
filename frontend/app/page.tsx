@@ -34,7 +34,7 @@ interface Notice {
   created_at: string;
 }
 
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "@/lib/config";
 
 function formatCurrency(amount: number): string {
   if (amount === 0) return "—";

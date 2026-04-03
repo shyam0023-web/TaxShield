@@ -93,6 +93,11 @@ async def lifespan(app: FastAPI):
     cleanup_task.cancel()
     scraper_task.cancel()
     retention_task.cancel()
+
+    # Close Redis connection pool
+    from app.redis_client import close_redis
+    await close_redis()
+
     logger.info("Shutting down...")
 
 

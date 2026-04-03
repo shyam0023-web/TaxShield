@@ -19,7 +19,7 @@ interface Notice {
   created_at: string;
 }
 
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "@/lib/config";
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleString("en-IN", {

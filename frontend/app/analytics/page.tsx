@@ -7,7 +7,7 @@ import {
   FileText, Scale, IndianRupee, Activity
 } from "lucide-react";
 
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "@/lib/config";
 
 interface Analytics {
   total_notices: number;

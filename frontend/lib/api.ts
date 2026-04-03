@@ -4,7 +4,7 @@
  * Uses native fetch (no axios dependency needed).
  */
 
-const API_BASE = "http://localhost:8000/api";
+import { API_BASE_WITH_PREFIX as API_BASE } from "@/lib/config";
 
 // ═══════════════════════════════════════════
 // Auth helpers
@@ -186,7 +186,9 @@ export async function fetchNotice(id: string): Promise<NoticeDetail> {
 
 /** Fetch notifications for the bell icon */
 export async function fetchNotifications(): Promise<Notification[]> {
-    const res = await fetch(`${API_BASE}/notifications`);
+    const res = await fetch(`${API_BASE}/notifications`, {
+        headers: getAuthHeaders(),
+    });
     if (!res.ok) return [];
     return res.json();
 }

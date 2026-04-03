@@ -13,7 +13,7 @@ interface AuditEvent {
   status: "SUCCESS" | "IN_PROGRESS" | "FAILED";
 }
 
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "@/lib/config";
 
 export default function AuditPage() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
