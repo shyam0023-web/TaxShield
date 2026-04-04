@@ -5,6 +5,8 @@ Retry with exponential backoff for transient failures (429, 503).
 """
 import asyncio
 from app.llm.groq_client import groq_client
+from app.llm.gemini_client import gemini
+from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,16 +18,16 @@ INITIAL_BACKOFF_S = 1.0
 class LLMRouter:
     def __init__(self):
         self.groq = groq_client
+        self.gemini = gemini
 
     async def generate(self, prompt: str, risk_level: str = "LOW",
                        json_mode: bool = False) -> str:
         """
         Route to Groq with retry on transient failures.
-        
-        Retries up to MAX_RETRIES times with exponential backoff.
-        Only retries on likely-transient errors (rate limit, server error).
+        If Groq fully fails (rate limits exceeded, offline), fallback to Gemini.
         """
         last_error = None
+        # Primary: Groq
         for attempt in range(MAX_RETRIES + 1):
             try:
                 return await self.groq.generate(prompt, json_mode=json_mode)
@@ -37,34 +39,53 @@ class LLMRouter:
                 ])
                 
                 if not is_transient or attempt == MAX_RETRIES:
-                    logger.error(f"LLM generation failed (attempt {attempt + 1}/{MAX_RETRIES + 1}): {e}")
-                    raise
+                    logger.error(f"Groq LLM generation failed permanently: {e}")
+                    break  # Break out to trigger fallback
                 
                 wait = INITIAL_BACKOFF_S * (2 ** attempt)
-                logger.warning(
-                    f"LLM transient error (attempt {attempt + 1}/{MAX_RETRIES + 1}), "
-                    f"retrying in {wait}s: {e}"
-                )
+                logger.warning(f"Groq transient error (attempt {attempt + 1}/{MAX_RETRIES + 1}), retrying in {wait}s: {e}")
                 await asyncio.sleep(wait)
         
-        raise last_error  # Should never reach here
+        # Fallback: Gemini
+        if settings.GEMINI_API_KEY:
+            logger.warning("Initiating LLM Fallback: Routing to Gemini 2.0 Flash")
+            try:
+                # Map Groq's high risk needs to Gemini Pro if needed, else Flash
+                model = "pro" if risk_level == "HIGH" else "flash"
+                return await self.gemini.generate(prompt, model=model, temperature=0, json_mode=json_mode)
+            except Exception as gemini_err:
+                logger.error(f"Gemini fallback also failed: {gemini_err}")
+                raise Exception(f"All LLM providers failed. Primary: {last_error}, Fallback: {gemini_err}") from gemini_err
+        
+        # If no fallback configured, raise original error
+        raise last_error
 
     async def generate_with_image(self, prompt: str, image_bytes: bytes,
                                    mime_type: str = "image/png") -> str:
-        """Vision is not supported in Groq-only mode."""
-        raise NotImplementedError(
-            "Vision not available in Groq-only mode. "
-            "Use Surya or Tesseract OCR for image processing."
-        )
+        """Vision triggers Gemini Vision bypass."""
+        if not settings.GEMINI_API_KEY:
+            raise NotImplementedError("Vision requires GEMINI_API_KEY to be set.")
+        return await self.gemini.generate_with_image(prompt, image_bytes, mime_type)
 
     async def stream(self, prompt: str, risk_level: str = "LOW"):
-        """Stream via Groq."""
+        """Stream via Groq, fallback to Gemini."""
         try:
+            # Note: Groq streaming doesn't support elegant retry if it fails mid-stream
+            # But we can try to initiate it, and if the init fails, fallback.
             async for chunk in self.groq.stream(prompt):
                 yield chunk
         except Exception as e:
-            logger.error(f"Groq streaming failed: {e}")
-            raise
+            logger.error(f"Groq streaming failed: {e}. Falling back to Gemini.")
+            if settings.GEMINI_API_KEY:
+                try:
+                    model = "pro" if risk_level == "HIGH" else "flash"
+                    async for chunk in self.gemini.stream(prompt, model=model):
+                        yield chunk
+                except Exception as gemini_err:
+                    logger.error(f"Gemini streaming fallback failed: {gemini_err}")
+                    raise
+            else:
+                raise
 
 
 llm_router = LLMRouter()

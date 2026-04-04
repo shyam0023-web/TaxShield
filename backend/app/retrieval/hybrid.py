@@ -25,6 +25,12 @@ def simple_tokenize(text: str) -> List[str]:
     return re.findall(r"\w+", text.lower())
 
 
+import os
+import pickle
+
+FAISS_INDEX_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "faiss.index")
+DOCS_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "faiss_docs.pkl")
+
 class HybridSearcher:
     def __init__(self):
         self.documents: List[LegalDocument] = []
@@ -42,14 +48,32 @@ class HybridSearcher:
             logger.info("Embedding model loaded successfully")
         return self._encoder
 
+    def _init_bm25(self):
+        tokenized_corpus = [simple_tokenize(doc.text) for doc in self.documents]
+        self.bm25 = BM25Okapi(tokenized_corpus)
+
     def build_index(self):
+        os.makedirs(os.path.dirname(FAISS_INDEX_PATH), exist_ok=True)
+        
+        if os.path.exists(FAISS_INDEX_PATH) and os.path.exists(DOCS_PATH):
+            logger.info("Loading FAISS index and documents from disk... (instant startup)")
+            try:
+                self.index = faiss.read_index(FAISS_INDEX_PATH)
+                with open(DOCS_PATH, "rb") as f:
+                    self.documents = pickle.load(f)
+                self._init_bm25()
+                logger.info(f"Loaded {len(self.documents)} documents from cache.")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to load cached index: {e}. Rebuilding...")
+
+        logger.info("Building FAISS index from scratch... (this may take ~30s)")
         self.documents = load_circulars()
         if not self.documents:
             logger.warning("No documents to index!")
             return
 
-        tokenized_corpus = [simple_tokenize(doc.text) for doc in self.documents]
-        self.bm25 = BM25Okapi(tokenized_corpus)
+        self._init_bm25()
 
         texts = [doc.text for doc in self.documents]
         embeddings = self.encoder.encode(texts, normalize_embeddings=True)
@@ -57,8 +81,13 @@ class HybridSearcher:
         dimension = embeddings.shape[1]
         self.index = faiss.IndexFlatIP(dimension)  # Inner product = cosine sim for normalized vectors
         self.index.add(np.array(embeddings).astype('float32'))
+        
+        # Cache to disk
+        faiss.write_index(self.index, FAISS_INDEX_PATH)
+        with open(DOCS_PATH, "wb") as f:
+            pickle.dump(self.documents, f)
 
-        logger.info(f"Indices built with {len(self.documents)} documents, dim={dimension}")
+        logger.info(f"Indices built and cached to disk with {len(self.documents)} documents, dim={dimension}")
 
     def search(self, query: str, top_k: int = 5) -> List[Dict]:
         """

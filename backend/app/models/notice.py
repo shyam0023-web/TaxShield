@@ -3,7 +3,7 @@ TaxShield — Notice Model
 SQLAlchemy model for notices table.
 Stores pipeline output from Agent 1 → 2 → 3 → 4.
 """
-from sqlalchemy import Column, String, Text, DateTime, Float, Boolean, JSON, Index
+from sqlalchemy import Column, String, Text, DateTime, Date, Float, Boolean, JSON, Index
 from app.database import Base
 import uuid
 from datetime import datetime
@@ -37,7 +37,7 @@ class Notice(Base):
     section = Column(String)  # Primary section e.g. "73"
     notice_type = Column(String)  # SCN, Demand, Scrutiny, etc.
     demand_amount = Column(Float, default=0.0)
-    response_deadline = Column(String)
+    response_deadline = Column(Date, nullable=True)
     
     # Agent 4 output
     draft_reply = Column(Text)

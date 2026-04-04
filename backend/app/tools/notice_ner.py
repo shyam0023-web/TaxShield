@@ -56,12 +56,12 @@ class NoticeNER:
             {{
                 "notice_type": "SCN/Demand/Scrutiny/Penalty/Other",
                 "notice_number": "the reference number",
-                "notice_date": "DD-MM-YYYY",
+                "notice_date": "YYYY-MM-DD",
                 "financial_year": "e.g., 2019-20",
                 "demand_amount": {{"igst": 0, "cgst": 0, "sgst": 0, "cess": 0, "total": 0}},
                 "penalty_amount": 0,
                 "interest_amount": 0,
-                "response_deadline": "DD-MM-YYYY",
+                "response_deadline": "YYYY-MM-DD",
                 "issuing_officer": "name and designation",
                 "jurisdiction": "commissionerate/division/range"
             }}

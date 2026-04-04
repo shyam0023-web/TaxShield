@@ -62,6 +62,10 @@ async def upload_notice(
     if not content:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
 
+    # Security: Validate PDF Magic Bytes (prevent extension spoofing)
+    if not content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="Invalid file signature. File is not a valid PDF.")
+
     # Create notice record in DB (status=processing)
     base_name = file.filename or "notice"
     case_id = f"{base_name}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
@@ -131,7 +135,19 @@ def _map_pipeline_state_to_notice(notice: Notice, final_state: dict) -> None:
     notice.section = sections[0] if sections else ""
     notice.notice_type = llm_extracted.get("notice_type", "")
     notice.demand_amount = parse_demand_amount(llm_extracted)
-    notice.response_deadline = llm_extracted.get("response_deadline", "")
+    # Safe date parsing for response_deadline
+    deadline_raw = llm_extracted.get("response_deadline", "")
+    parsed_deadline = None
+    if deadline_raw and deadline_raw.lower() not in ("not specified", "none", "null", ""):
+        try:
+            parsed_deadline = datetime.strptime(deadline_raw, "%Y-%m-%d").date()
+        except ValueError:
+            try:
+                parsed_deadline = datetime.strptime(deadline_raw, "%d-%m-%Y").date()
+            except ValueError:
+                pass
+                
+    notice.response_deadline = parsed_deadline
     notice.draft_reply = final_state.get("draft_reply", "")
     notice.draft_status = "draft_ready" if final_state.get("draft_reply") else "pending"
     notice.verification_status = final_state.get("verification_status")
@@ -226,7 +242,7 @@ def _serialize_notice_brief(n: Notice) -> dict:
         "section": n.section or "",
         "risk_level": n.risk_level or "UNKNOWN",
         "demand_amount": n.demand_amount or 0,
-        "response_deadline": n.response_deadline or "",
+        "response_deadline": n.response_deadline.isoformat() if n.response_deadline else "",
         "draft_status": n.draft_status or "pending",
         "status": n.status,
         "is_time_barred": n.is_time_barred or False,

@@ -67,7 +67,7 @@ async def compare_notices(
             "risk_level": n.risk_level or "UNKNOWN",
             "risk_score": n.risk_score or 0,
             "demand_amount": n.demand_amount or 0,
-            "response_deadline": n.response_deadline or "—",
+            "response_deadline": n.response_deadline.isoformat() if n.response_deadline else "—",
             "is_time_barred": n.is_time_barred or False,
             "draft_status": n.draft_status or "pending",
             "status": n.status or "unknown",
