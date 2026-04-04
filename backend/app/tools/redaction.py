@@ -95,7 +95,15 @@ class PIIRedactor:
                 ],
             )
 
-            self._analyzer = AnalyzerEngine()
+            # Use small spaCy model to fit Railway's 1GB RAM limit
+            from presidio_analyzer.nlp_engine import NlpEngineProvider
+            nlp_config = {
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+            }
+            provider = NlpEngineProvider(nlp_configuration=nlp_config)
+            nlp_engine = provider.create_engine()
+            self._analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
             # Add custom recognizers
             self._analyzer.registry.add_recognizer(pan_recognizer)
             self._analyzer.registry.add_recognizer(aadhaar_recognizer)
