@@ -12,9 +12,12 @@ WORKDIR /app
 # Install CPU-only PyTorch FIRST (saves ~1.5GB vs default CUDA build)
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Install production dependencies (no paddleocr/surya = ~2GB saved)
+# Install production dependencies
 COPY requirements-prod.txt .
 RUN pip install --no-cache-dir -r requirements-prod.txt
+
+# Pre-download spaCy model during build (not at runtime — saves 60s startup)
+RUN python -m spacy download en_core_web_lg
 
 # Copy application code
 COPY . .
@@ -22,5 +25,5 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Start server
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Single worker to fit within Railway's 1GB memory limit
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
