@@ -16,8 +16,7 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 COPY requirements-prod.txt .
 RUN pip install --no-cache-dir -r requirements-prod.txt
 
-# Pre-download spaCy model during build (sm = 12MB vs lg = 400MB)
-RUN python -m spacy download en_core_web_sm
+# No spaCy needed in prod — PII redaction uses regex fallback
 
 # Copy application code
 COPY . .
