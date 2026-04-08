@@ -106,7 +106,7 @@ First 1000 chars of notice:
         try:
             # Route through the central LLM Router (Flash/Pro/Groq fallback)
             # Use LOW risk for classification to use Gemini Flash (fast)
-            result = await llm_router.generate(prompt, risk_level="LOW", json_mode=True)
+            result = await llm_router.generate(prompt, risk_level="LOW", json_mode=True, model_type="instant")
             return json.loads(result) if isinstance(result, str) else result
         except Exception as e:
             logger.error(f"Risk classification failed: {e}")

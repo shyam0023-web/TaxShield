@@ -70,7 +70,7 @@ class NoticeNER:
             {text[:3000]}
             """
             
-            llm_entities = await llm_router.generate(llm_prompt, risk_level="LOW")
+            llm_entities = await llm_router.generate(llm_prompt, risk_level="LOW", model_type="instant")
             
             # Parse JSON response with robust fallback
             logger.info(f"NER LLM response ({len(llm_entities)} chars): {llm_entities[:200]}")
@@ -78,7 +78,6 @@ class NoticeNER:
                 entities["llm_extracted"] = json.loads(llm_entities)
             except (json.JSONDecodeError, TypeError):
                 # Try extracting JSON object from within text
-                import re
                 json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', llm_entities, re.DOTALL)
                 if json_match:
                     try:

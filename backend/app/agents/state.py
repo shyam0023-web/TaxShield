@@ -8,6 +8,7 @@ class PipelineState(TypedDict, total=False):
     # Input
     pdf_bytes: bytes
     case_id: str
+    user_instructions: Optional[str]
     
     # Agent 1 output
     processing_status: str  # "complete", "partial", "failed"
@@ -17,6 +18,7 @@ class PipelineState(TypedDict, total=False):
     notice_annotations: list
     time_bar: dict
     redacted_fields: list
+    is_gst_notice: Optional[bool]  # GST validation gate result
     
     # Agent 2 output
     risk_level: str         # LOW, MEDIUM, HIGH

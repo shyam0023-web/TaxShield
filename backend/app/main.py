@@ -6,6 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routes import notices, chat, drafts, health, auth, audit, verification, analytics, mfa, diff, kb_routes
+try:
+    from app.routes import rag_routes, report_refinement
+except Exception:
+    rag_routes = None
+    report_refinement = None
 from app.middleware.error_handler import setup_error_handlers
 from app.middleware.logging import setup_logging
 from app.middleware.rate_limiter import setup_rate_limiting
@@ -58,6 +63,15 @@ async def lifespan(app: FastAPI):
     import app.models.audit_log  # noqa: F401
     import app.models.kb_staging   # noqa: F401
 
+    # Startup: Initialize Supabase
+    logger.info("Connecting to Supabase...")
+    from app.supabase_client import supabase_client
+    supabase_connected = await supabase_client.connect()
+    if supabase_connected:
+        logger.info("✅ Supabase PostgreSQL connected!")
+    else:
+        logger.warning("⚠️ Supabase unavailable — falling back to SQLite")
+
     # Startup: create DB tables
     logger.info("Initializing database...")
     await init_db()
@@ -89,6 +103,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # Shutdown: Disconnect from Supabase
+    logger.info("Disconnecting from Supabase...")
+    await supabase_client.disconnect()
+
     # Shutdown: cancel background tasks
     cleanup_task.cancel()
     scraper_task.cancel()
@@ -103,23 +121,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="TaxShield API", version="2.0", lifespan=lifespan)
 
-# CORS
-_cors_origins = (
-    ["*"] if settings.CORS_ORIGINS == "*"
-    else [o.strip() for o in settings.CORS_ORIGINS.split(",")]
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-
-# Middleware
+# Middleware (order matters — CORS must be LAST so it wraps outermost)
 setup_error_handlers(app)
 setup_logging(app)
 setup_rate_limiting(app)
+
+# CORS — must be added last so headers are on ALL responses including 401/500
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Routes
 app.include_router(health.router, tags=["Health"])
@@ -133,3 +147,7 @@ app.include_router(analytics.router, prefix="/api", tags=["Analytics"])
 app.include_router(mfa.router, prefix="/api", tags=["MFA"])
 app.include_router(diff.router, prefix="/api", tags=["Draft Diff"])
 app.include_router(kb_routes.router, prefix="/api", tags=["KB Review"])
+if rag_routes:
+    app.include_router(rag_routes.router, tags=["RAG"])
+if report_refinement:
+    app.include_router(report_refinement.router, prefix="/api", tags=["Report Refinement"])

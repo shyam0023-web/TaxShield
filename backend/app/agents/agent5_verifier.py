@@ -81,14 +81,13 @@ class Agent5Verifier:
         citation_result = self._check_citations(draft_reply, circulars, entities)
 
         # ═══ Stages 2-5: Run in parallel (all use LLM) ═══
-        logger.info("Stages 2-5: Running in parallel (multi-sample, CoVe, consistency, adversarial)")
+        # ═══ Stages 2-5: Run sequentially to avoid 30 Req/Min Rate Limits ═══
+        logger.info("Stages 2-5: Running sequentially to respect Groq rate limits")
 
-        stage_2, stage_3, stage_4, stage_5 = await asyncio.gather(
-            self._multi_sample_consistency(draft_reply, raw_text, entities, circulars),
-            self._chain_of_verification(draft_reply, entities),
-            self._check_consistency(draft_reply),
-            self._adversarial_challenge(draft_reply, raw_text, circulars),
-        )
+        stage_2 = await self._multi_sample_consistency(draft_reply, raw_text, entities, circulars)
+        stage_3 = await self._chain_of_verification(draft_reply, entities)
+        stage_4 = await self._check_consistency(draft_reply)
+        stage_5 = await self._adversarial_challenge(draft_reply, raw_text, circulars)
 
         # ═══ Aggregate with weighted scoring ═══
         all_stages = {
@@ -246,14 +245,14 @@ class Agent5Verifier:
                 entities=entities_summary,
                 circulars=circulars_text,
             )
-            alt_draft = await llm_router.generate(alt_prompt, risk_level="LOW")
+            alt_draft = await llm_router.generate(alt_prompt, risk_level="LOW", model_type="instant")
 
             # Step 2: Compare claims between original and alternative
             compare_prompt = MULTI_SAMPLE_COMPARE_PROMPT.format(
                 draft_a=draft[:3000],
                 draft_b=alt_draft[:3000],
             )
-            raw = await llm_router.generate(compare_prompt, risk_level="LOW", json_mode=True)
+            raw = await llm_router.generate(compare_prompt, risk_level="LOW", json_mode=True, model_type="instant")
 
             try:
                 comparisons = json.loads(raw)
@@ -319,7 +318,7 @@ class Agent5Verifier:
         try:
             # Step 1: Generate verification questions
             q_prompt = COVE_QUESTIONS_PROMPT.format(draft_text=draft[:4000])
-            raw_questions = await llm_router.generate(q_prompt, risk_level="LOW", json_mode=True)
+            raw_questions = await llm_router.generate(q_prompt, risk_level="LOW", json_mode=True, model_type="instant")
 
             try:
                 questions = json.loads(raw_questions)
@@ -354,7 +353,7 @@ class Agent5Verifier:
                 kb_content=kb_content[:6000],
                 questions_json=json.dumps(questions[:6]),
             )
-            raw_verdicts = await llm_router.generate(v_prompt, risk_level="LOW", json_mode=True)
+            raw_verdicts = await llm_router.generate(v_prompt, risk_level="LOW", json_mode=True, model_type="instant")
 
             try:
                 verdicts = json.loads(raw_verdicts)
@@ -428,7 +427,7 @@ class Agent5Verifier:
 
         try:
             prompt = CONSISTENCY_PROMPT.format(draft_text=draft[:4000])
-            raw = await llm_router.generate(prompt, risk_level="LOW", json_mode=True)
+            raw = await llm_router.generate(prompt, risk_level="LOW", json_mode=True, model_type="instant")
 
             try:
                 claims = json.loads(raw)
@@ -504,7 +503,7 @@ class Agent5Verifier:
                 circulars_available=circulars_text,
             )
 
-            raw = await llm_router.generate(prompt, risk_level="LOW", json_mode=True)
+            raw = await llm_router.generate(prompt, risk_level="LOW", json_mode=True, model_type="instant")
 
             try:
                 adv_issues = json.loads(raw)

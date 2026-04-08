@@ -205,6 +205,7 @@ def build_agent4_context(state: dict) -> dict:
         "retrieved_circulars": state.get("retrieved_circulars", []),
         "defense_strategy": state.get("defense_strategy", ""),
         "contradictions": state.get("contradictions", {}),
+        "user_instructions": state.get("user_instructions", ""),
     }
     logger.debug(
         f"Agent 4 context: {len(ctx)} fields, "

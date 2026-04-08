@@ -148,10 +148,17 @@ class Agent4Drafter:
             if defense_strategy_text:
                 prompt += defense_strategy_text
 
+        # ═══ Inject user instructions if provided ═══
+        user_instructions = (state_dict.get("user_instructions") or "").strip()
+        if user_instructions:
+            logger.info("Injecting user_instructions into draft prompt")
+            prompt += f"\n\nSPECIAL INSTRUCTIONS FROM THE CLIENT (MUST FOLLOW):\n{user_instructions}"
+
         try:
             draft_reply = await llm_router.generate(
                 prompt,
                 risk_level=risk_level,
+                model_type="instant"
             )
             logger.info(f"Draft generated: {len(draft_reply)} chars")
         except Exception as e:

@@ -96,6 +96,14 @@ async def agent5_node(state: PipelineState) -> dict:
     return validate_agent_output("agent5", result)
 
 
+def route_after_agent1(state: PipelineState) -> str:
+    """Gate: Only proceed if document is a GST notice."""
+    if state.get("is_gst_notice") is False or state.get("processing_status") == "rejected":
+        logger.warning("Pipeline STOPPED — document is not a GST notice")
+        return "end"
+    return "agent4"
+
+
 # Build the graph
 workflow = StateGraph(PipelineState)
 
@@ -107,12 +115,19 @@ workflow.add_node("agent4", agent4_node)
 workflow.add_node("agent5", agent5_node)
 
 workflow.set_entry_point("agent1")
-workflow.add_edge("agent1", "agent2")
-workflow.add_conditional_edges("agent2", route_after_risk, {"agent3": "agent3", "agent4": "agent4"})
-workflow.add_edge("agent3", "compress")
-workflow.add_edge("compress", "agent4")
-workflow.add_edge("agent4", "agent5")
-workflow.add_edge("agent5", END)
+
+# GST validation gate: stop if not a GST notice, otherwise draft
+workflow.add_conditional_edges(
+    "agent1",
+    route_after_agent1,
+    {"agent4": "agent4", "end": END}
+)
+
+# Bypassing intermediate agents for the demo to avoid free Tier 1 API limits:
+# workflow.add_conditional_edges("agent2", route_after_risk, {"agent3": "agent3", "agent4": "agent4"})
+# workflow.add_edge("agent3", "compress")
+# workflow.add_edge("compress", "agent4")
+workflow.add_edge("agent4", END)
 
 graph = workflow.compile()
 

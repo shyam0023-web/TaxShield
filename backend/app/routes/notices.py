@@ -7,7 +7,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Form
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ ALLOWED_EXTENSIONS = {".pdf"}
 @router.post("/notices/upload")
 async def upload_notice(
     file: UploadFile = File(...),
+    user_instructions: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -86,7 +87,7 @@ async def upload_notice(
 
     # Launch pipeline in the background (non-blocking)
     asyncio.create_task(
-        _run_pipeline_background(notice_id, case_id, content, current_user.id, file.filename)
+        _run_pipeline_background(notice_id, case_id, content, current_user.id, file.filename, user_instructions)
     )
 
     # Return 202 Accepted immediately — frontend polls GET /notices/{id}
@@ -103,7 +104,7 @@ async def upload_notice(
 
 
 
-PIPELINE_TIMEOUT_SECONDS = 120  # Max time for full pipeline (OCR → NER → Risk → Legal → Draft → Verify)
+PIPELINE_TIMEOUT_SECONDS = 600  # Max time for full pipeline (OCR → NER → Risk → Legal → Draft → Verify)
 
 
 # ═══════════════════════════════════════════
@@ -149,12 +150,20 @@ def _map_pipeline_state_to_notice(notice: Notice, final_state: dict) -> None:
                 
     notice.response_deadline = parsed_deadline
     notice.draft_reply = final_state.get("draft_reply", "")
-    notice.draft_status = "draft_ready" if final_state.get("draft_reply") else "pending"
+    notice.draft_status = "draft_ready" if notice.draft_reply else "pending"
     notice.verification_status = final_state.get("verification_status")
     notice.verification_score = final_state.get("verification_score")
     notice.verification_issues = final_state.get("verification_issues")
     notice.accuracy_report = final_state.get("accuracy_report")
-    notice.status = "processed"
+    
+    # Critical Fix: Propagate Agent 4 LLM Generation errors safely
+    draft_error = final_state.get("draft_error", "")
+    if draft_error:
+        notice.status = "error"
+        notice.error_message = draft_error
+    else:
+        notice.status = "processed"
+        
     notice.updated_at = datetime.utcnow()
 
 
@@ -182,6 +191,7 @@ async def _run_pipeline_background(
     pdf_bytes: bytes,
     user_id: str,
     original_filename: str | None,
+    user_instructions: str | None = None,
 ):
     """
     Orchestrate the 5-agent pipeline in the background, then persist results.
@@ -192,6 +202,7 @@ async def _run_pipeline_background(
             "pdf_bytes": pdf_bytes,
             "case_id": case_id,
             "current_agent": "start",
+            "user_instructions": user_instructions or "",
         }
 
         try:

@@ -31,6 +31,7 @@ export default function UploadPage() {
     const [showConsent, setShowConsent] = useState(false);
     const [consentChecked, setConsentChecked] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
+    const [userInstructions, setUserInstructions] = useState("");
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -111,6 +112,9 @@ export default function UploadPage() {
 
         const formData = new FormData();
         formData.append("file", file);
+        if (userInstructions.trim()) {
+            formData.append("user_instructions", userInstructions.trim());
+        }
 
         try {
             // Show progress while uploading
@@ -401,26 +405,61 @@ export default function UploadPage() {
                     </div>
                 )}
 
-                {/* Upload Button */}
+                {/* Instructions + Upload Button */}
                 {file && status === "idle" && (
-                    <div
-                        style={{
-                            marginTop: "var(--space-6)",
-                            display: "flex",
-                            justifyContent: "center",
-                        }}
-                    >
-                        <button
-                            className="btn btn-primary animate-fade-in"
-                            onClick={handleUploadClick}
-                            style={{
-                                padding: "var(--space-4) var(--space-8)",
-                                fontSize: "var(--font-base)",
-                            }}
-                        >
-                            <Upload size={18} />
-                            Upload & Analyze
-                        </button>
+                    <div className="animate-fade-in" style={{ marginTop: "var(--space-6)" }}>
+                        <div style={{ marginBottom: "var(--space-4)" }}>
+                            <label
+                                htmlFor="user-instructions"
+                                style={{
+                                    display: "block",
+                                    fontSize: "var(--font-sm)",
+                                    fontWeight: 600,
+                                    color: "var(--text-secondary)",
+                                    marginBottom: "var(--space-2)",
+                                }}
+                            >
+                                Additional Context for AI Drafter
+                                <span style={{ fontWeight: 400, color: "var(--text-tertiary)", marginLeft: "var(--space-2)" }}>— Optional</span>
+                            </label>
+                            <textarea
+                                id="user-instructions"
+                                placeholder="E.g. We already paid part of the amount. Focus on Section 73. Keep tone polite..."
+                                value={userInstructions}
+                                onChange={(e) => setUserInstructions(e.target.value)}
+                                rows={3}
+                                style={{
+                                    width: "100%",
+                                    padding: "var(--space-3)",
+                                    borderRadius: "var(--radius-md)",
+                                    border: "1px solid var(--border-primary)",
+                                    background: "var(--bg-secondary)",
+                                    color: "var(--text-primary)",
+                                    fontSize: "var(--font-sm)",
+                                    lineHeight: 1.6,
+                                    resize: "vertical",
+                                    fontFamily: "inherit",
+                                    outline: "none",
+                                    boxSizing: "border-box",
+                                }}
+                            />
+                            <p style={{ fontSize: "var(--font-xs)", color: "var(--text-tertiary)", marginTop: "var(--space-1)" }}>
+                                These instructions will guide the AI when drafting your reply.
+                            </p>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "center" }}>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleUploadClick}
+                                style={{
+                                    padding: "var(--space-4) var(--space-8)",
+                                    fontSize: "var(--font-base)",
+                                }}
+                            >
+                                <Upload size={18} />
+                                Upload & Analyze
+                            </button>
+                        </div>
                     </div>
                 )}
 

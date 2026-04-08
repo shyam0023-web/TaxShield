@@ -54,6 +54,20 @@ class Agent1Processor:
                 "current_agent": "agent1"
             }
         
+        # ═══ Step 1B: GST Notice Validation Gate ═══
+        logger.info("Step 1B: Validating if document is a GST notice...")
+        is_gst = self._is_gst_notice(raw_text)
+        if not is_gst:
+            logger.warning("Document is NOT a GST notice. Rejecting.")
+            return {
+                "processing_status": "rejected",
+                "is_gst_notice": False,
+                "raw_text": raw_text[:500],
+                "draft_error": "This document does not appear to be a GST notice. TaxShield only processes GST-related notices (SCN, DRC, ASMT, etc.).",
+                "current_agent": "agent1",
+            }
+        logger.info("✅ Document confirmed as GST notice")
+
         # ═══ Step 2: Sanitize ═══
         logger.info("Step 2/6: Input sanitization")
         sanitize_result = sanitizer.sanitize(raw_text)
@@ -147,6 +161,57 @@ class Agent1Processor:
                      f"TimeBar={time_bar.get('potentially_time_barred', False)}")
         
         return output
+
+    def _is_gst_notice(self, text: str) -> bool:
+        """
+        Check if the extracted text is a GST-related notice.
+        Uses keyword matching against a curated set of GST legal vocabulary.
+        Returns True if at least 2 GST-specific signals are found.
+        """
+        import re
+        text_lower = text.lower()
+
+        # Tier 1: Strong GST signals (any ONE of these = GST notice)
+        strong_signals = [
+            r'\bgstin\b',
+            r'\bgstr[-\s]?[123][ab]?\b',
+            r'\bcgst\b',
+            r'\bsgst\b',
+            r'\bigst\b',
+            r'\bgst\s+act\b',
+            r'\bcentral\s+goods\s+and\s+services\s+tax\b',
+            r'\bstate\s+goods\s+and\s+services\s+tax\b',
+            r'\binput\s+tax\s+credit\b',
+            r'\bitc\b',
+            r'\bdrc[-\s]?0[1-9]\b',
+            r'\basmt[-\s]?\d{2}\b',
+        ]
+
+        strong_hits = sum(1 for p in strong_signals if re.search(p, text_lower))
+        if strong_hits >= 1:
+            return True
+
+        # Tier 2: Weak GST signals (need at least 3 together)
+        weak_signals = [
+            r'\bshow\s+cause\s+notice\b',
+            r'\bscn\b',
+            r'\bsection\s+(73|74|16|17|29|30)\b',
+            r'\bdemand\b',
+            r'\bpenalty\b',
+            r'\btax\s+(period|liability|amount)\b',
+            r'\bregistered\s+person\b',
+            r'\bproper\s+officer\b',
+            r'\badjudicating\s+authority\b',
+            r'\breturn\s+filing\b',
+            r'\be[-\s]?way\s+bill\b',
+        ]
+
+        weak_hits = sum(1 for p in weak_signals if re.search(p, text_lower))
+        if weak_hits >= 3:
+            return True
+
+        logger.info(f"GST gate: strong_hits={strong_hits}, weak_hits={weak_hits} — NOT a GST notice")
+        return False
 
 
 # Singleton

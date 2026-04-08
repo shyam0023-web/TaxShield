@@ -154,7 +154,7 @@ class Agent3Analyst:
         )
 
         try:
-            result = await llm_router.generate(prompt, risk_level="LOW", json_mode=True)
+            result = await llm_router.generate(prompt, risk_level="LOW", json_mode=True, model_type="instant")
             return json.loads(result) if isinstance(result, str) else result
         except Exception as e:
             logger.error(f"Contradiction detection failed: {e}")
@@ -177,7 +177,7 @@ class Agent3Analyst:
         )
 
         try:
-            result = await llm_router.generate(prompt, risk_level="MEDIUM", json_mode=True)
+            result = await llm_router.generate(prompt, risk_level="MEDIUM", json_mode=True, model_type="instant")
             return json.loads(result) if isinstance(result, str) else result
         except Exception as e:
             logger.error(f"Procedural defect analysis failed: {e}")
@@ -227,6 +227,7 @@ class Agent3Analyst:
                 prompt,
                 risk_level=ctx.get("risk_level", "MEDIUM"),
                 json_mode=True,
+                model_type="instant"
             )
             return json.loads(result) if isinstance(result, str) else result
         except Exception as e:
@@ -287,12 +288,17 @@ class Agent3Analyst:
             parallel_tasks.append(self._analyze_procedural_defects(procedural_ctx))
 
         logger.info(
-            f"Fan-out: Running {len(parallel_tasks)} sub-tasks in parallel "
-            f"(search + contradictions{' + procedural' if run_procedural else ''})..."
+            f"Fan-out: Running {len(parallel_tasks)} sub-tasks sequentially to avoid rate limits..."
         )
 
-        # ═══ Execute parallel sub-tasks ═══
-        results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+        # ═══ Execute sub-tasks sequentially ═══
+        results = []
+        for task in parallel_tasks:
+            try:
+                res = await task
+                results.append(res)
+            except Exception as e:
+                results.append(e)
 
         # Unpack results (handle exceptions gracefully)
         circulars = results[0] if not isinstance(results[0], Exception) else []

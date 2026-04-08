@@ -5,8 +5,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     
+    # Supabase
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
+    SUPABASE_SERVICE_KEY: str = ""
+    
     # Database
-    DATABASE_URL: str = "sqlite:///./taxshield.db"  # SQLite for now, Supabase later
+    DATABASE_URL: str = "sqlite+aiosqlite:///taxshield.db"  # Default SQLite, override with .env for Supabase
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
